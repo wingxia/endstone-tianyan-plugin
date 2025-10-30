@@ -1,0 +1,20 @@
+{
+  "Source Name": "行为实施者名",
+  "Source ID": "行为实施者ID",
+  "Source Type": "行为实施者类型",
+  "Player": "玩家",
+  "Target Name" : "行为对象名",
+  "Target ID" : "行为对象ID",
+  "Data": "数据",
+  "Time": "时间",
+  "Action": "行为",
+  "Position": "位置",
+  "World": "维度",
+  "Logs": "日志",
+  "No log found": "没有找到的日志",
+  "This event has been canceled": "此事件已被拦截",
+  "Console not support menu": "控制台不支持菜单",
+  "Check behavior logs at your current location": "查询你所在的位置的行为日志",
+  "Revert behaviors by time": "按照指定时间回溯行为",
+  "Item in Hand": "手持物品"
+}
