@@ -37,8 +37,9 @@ public:
             return rc;
         }
 
-        // 创建 LOGDATA 表
+        // 创建 LOGDATA 表，添加uuid字段作为主键
         const std::string create_logdata_table = "CREATE TABLE IF NOT EXISTS LOGDATA ("
+                                        "uuid TEXT PRIMARY KEY, "
                                         "id TEXT, "
                                         "name TEXT, "
                                         "pos_x REAL, pos_y REAL, pos_z REAL, "
@@ -47,7 +48,8 @@ public:
                                         "obj_name TEXT, "
                                         "time INTEGER, "
                                         "type TEXT, "
-                                        "data TEXT)";
+                                        "data TEXT, "
+                                        "status TEXT)";
         rc = sqlite3_exec(db, create_logdata_table.c_str(), nullptr, nullptr, nullptr);
         if (rc != SQLITE_OK) {
             std::cerr << "创建 logdata 表失败: " << sqlite3_errmsg(db) << std::endl;
@@ -234,10 +236,113 @@ public:
         return true;
     }
 
+    // 根据UUID更新指定记录的状态
+    [[nodiscard]] bool updateStatusByUUID(const std::string &uuid, const std::string &newStatus) const {
+        sqlite3* db;
+        int rc = sqlite3_open(db_filename.c_str(), &db); // 打开数据库
+        if (rc) {
+            std::cerr << "无法打开数据库: " << sqlite3_errmsg(db) << std::endl;
+            return false;
+        }
+
+        const std::string sql = "UPDATE LOGDATA SET status = ? WHERE uuid = ?;";
+        
+        sqlite3_stmt* stmt;
+        rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            return false;
+        }
+
+        // 绑定参数
+        sqlite3_bind_text(stmt, 1, newStatus.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, uuid.c_str(), -1, SQLITE_STATIC);
+
+        // 执行 SQL 语句
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) {
+            std::cerr << "SQL 更新失败: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        }
+
+        // 清理资源
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+
+        return true;
+    }
+
+    // 批量更新状态
+    [[nodiscard]] bool updateStatusesByUUIDs(const std::vector<std::pair<std::string, std::string>>& uuidStatusPairs) const {
+        if (uuidStatusPairs.empty()) {
+            return true;
+        }
+
+        sqlite3* db;
+        int rc = sqlite3_open(db_filename.c_str(), &db);
+        if (rc) {
+            std::cerr << "无法打开数据库: " << sqlite3_errmsg(db) << std::endl;
+            return false;
+        }
+
+        // 开始事务以提高性能
+        rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "无法开始事务: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            return false;
+        }
+
+        const std::string sql = "UPDATE LOGDATA SET status = ? WHERE uuid = ?;";
+        
+        sqlite3_stmt* stmt;
+        rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            return false;
+        }
+
+        // 遍历所有UUID和状态对并更新
+        for (const auto& [uuid, status] : uuidStatusPairs) {
+            // 绑定参数
+            sqlite3_bind_text(stmt, 1, status.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 2, uuid.c_str(), -1, SQLITE_STATIC);
+
+            // 执行 SQL 语句
+            rc = sqlite3_step(stmt);
+            if (rc != SQLITE_DONE) {
+                std::cerr << "SQL 更新失败: " << sqlite3_errmsg(db) << std::endl;
+                sqlite3_finalize(stmt);
+                sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+                sqlite3_close(db);
+                return false;
+            }
+            
+            // 重置语句以供下次使用
+            sqlite3_reset(stmt);
+        }
+        
+        // 提交事务
+        rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "无法提交事务: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        }
+
+        // 清理资源
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return true;
+    }
 
     ///////////////////// LOGDATA 表操作 /////////////////////
 
-    [[nodiscard]] int addLog(const std::string& id,
+    [[nodiscard]] int addLog(const std::string& uuid,
+                             const std::string& id,
                              const std::string& name,
                              const double pos_x, const double pos_y, const double pos_z,
                              const std::string& world,
@@ -245,7 +350,8 @@ public:
                              const std::string& obj_name,
                              const long long time,
                              const std::string& type,
-                             const std::string& data) const {
+                             const std::string& data,
+                             const std::string& status) const {
         sqlite3* db;
         int rc = sqlite3_open(db_filename.c_str(), &db);
         if (rc) {
@@ -253,10 +359,10 @@ public:
             return rc;
         }
 
-        const std::string sql = "INSERT INTO LOGDATA (id, name, pos_x, pos_y, pos_z, "
-                          "world, obj_id, obj_name, time, type, data) VALUES (?, "
+        const std::string sql = "INSERT INTO LOGDATA (uuid, id, name, pos_x, pos_y, pos_z, "
+                          "world, obj_id, obj_name, time, type, data, status) VALUES (?, ?, "
                           "?, ?, ?, ?, "
-                          "?, ?, ?, ?, ?, ?);";
+                          "?, ?, ?, ?, ?, ?, ?);";
 
         sqlite3_stmt* stmt;
         rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
@@ -267,17 +373,19 @@ public:
         }
 
         // 绑定参数
-        sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_double(stmt, 3, pos_x);
-        sqlite3_bind_double(stmt, 4, pos_y);
-        sqlite3_bind_double(stmt, 5, pos_z);
-        sqlite3_bind_text(stmt, 6, world.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 7, obj_id.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 8, obj_name.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_int64(stmt, 9, time);
-        sqlite3_bind_text(stmt, 10, type.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 11, data.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 1, uuid.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_double(stmt, 4, pos_x);
+        sqlite3_bind_double(stmt, 5, pos_y);
+        sqlite3_bind_double(stmt, 6, pos_z);
+        sqlite3_bind_text(stmt, 7, world.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 8, obj_id.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 9, obj_name.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 10, time);
+        sqlite3_bind_text(stmt, 11, type.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 12, data.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 13, status.c_str(), -1, SQLITE_STATIC);
         
         // 执行 SQL 语句
         rc = sqlite3_step(stmt);
@@ -295,8 +403,8 @@ public:
     }
 
     // 批量插入日志数据
-    [[nodiscard]] int addLogs(const std::vector<std::tuple<std::string, std::string, double, double, double, 
-                             std::string, std::string, std::string, long long, std::string, std::string>>& logs) const {
+    [[nodiscard]] int addLogs(const std::vector<std::tuple<std::string, std::string, std::string, double, double, double, 
+                             std::string, std::string, std::string, long long, std::string, std::string, std::string>>& logs) const {
         if (logs.empty()) {
             return SQLITE_OK; // 空数据直接返回成功
         }
@@ -316,10 +424,10 @@ public:
             return rc;
         }
 
-        const std::string sql = "INSERT INTO LOGDATA (id, name, pos_x, pos_y, pos_z, "
-                          "world, obj_id, obj_name, time, type, data) VALUES (?, "
+        const std::string sql = "INSERT INTO LOGDATA (uuid, id, name, pos_x, pos_y, pos_z, "
+                          "world, obj_id, obj_name, time, type, data, status) VALUES (?, ?, "
                           "?, ?, ?, ?, "
-                          "?, ?, ?, ?, ?, ?);";
+                          "?, ?, ?, ?, ?, ?, ?);";
 
         sqlite3_stmt* stmt;
         rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
@@ -331,20 +439,22 @@ public:
 
         // 遍历所有日志数据并插入
         for (const auto& log : logs) {
-            const auto& [id, name, pos_x, pos_y, pos_z, world, obj_id, obj_name, time, type, data] = log;
+            const auto& [uuid, id, name, pos_x, pos_y, pos_z, world, obj_id, obj_name, time, type, data, status] = log;
 
             // 绑定参数
-            sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_double(stmt, 3, pos_x);
-            sqlite3_bind_double(stmt, 4, pos_y);
-            sqlite3_bind_double(stmt, 5, pos_z);
-            sqlite3_bind_text(stmt, 6, world.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 7, obj_id.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 8, obj_name.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_int64(stmt, 9, time);
-            sqlite3_bind_text(stmt, 10, type.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 11, data.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 1, uuid.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 3, name.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_double(stmt, 4, pos_x);
+            sqlite3_bind_double(stmt, 5, pos_y);
+            sqlite3_bind_double(stmt, 6, pos_z);
+            sqlite3_bind_text(stmt, 7, world.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 8, obj_id.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 9, obj_name.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_int64(stmt, 10, time);
+            sqlite3_bind_text(stmt, 11, type.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 12, data.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 13, status.c_str(), -1, SQLITE_STATIC);
             
             // 执行 SQL 语句
             rc = sqlite3_step(stmt);

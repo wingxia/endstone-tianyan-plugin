@@ -16,6 +16,7 @@ public:
 
     //记录数据结构
     struct LogData {
+        string uuid;
         string id;
         string name;
         double pos_x;
@@ -27,6 +28,7 @@ public:
         long long time;
         string type;
         string data;
+        string status;
     };
 
     //将字符串形式的Unix时间戳转换为 2 long 类型

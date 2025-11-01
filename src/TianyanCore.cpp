@@ -45,18 +45,18 @@ std::string TianyanCore::timestampToString(long long timestamp) {
 }
 
 int TianyanCore::recordLog(const LogData& logData) const {
-    return Database.addLog(logData.id,logData.name,logData.pos_x,logData.pos_y,logData.pos_z,logData.world,logData.obj_id,logData.obj_name,logData.time,logData.type,logData.data);
+    return Database.addLog(logData.uuid, logData.id, logData.name, logData.pos_x, logData.pos_y, logData.pos_z, logData.world, logData.obj_id, logData.obj_name, logData.time, logData.type, logData.data, logData.status);
 }
 
 int TianyanCore::recordLogs(const std::vector<LogData>& logDatas) const {
     // 将LogData转换为数据库所需的tuple格式
-    std::vector<std::tuple<std::string, std::string, double, double, double, 
-                           std::string, std::string, std::string, long long, std::string, std::string>> dbLogs;
+    std::vector<std::tuple<std::string, std::string, std::string, double, double, double, 
+                           std::string, std::string, std::string, long long, std::string, std::string, std::string>> dbLogs;
     
     dbLogs.reserve(logDatas.size());
-for (const auto&[id, name, pos_x, pos_y, pos_z, world, obj_id, obj_name, time, type, data] : logDatas) {
-        dbLogs.emplace_back(id, name, pos_x, pos_y, pos_z,
-                            world, obj_id, obj_name, time, type, data);
+    for (const auto&[uuid, id, name, pos_x, pos_y, pos_z, world, obj_id, obj_name, time, type, data, status] : logDatas) {
+        dbLogs.emplace_back(uuid, id, name, pos_x, pos_y, pos_z,
+                            world, obj_id, obj_name, time, type, data, status);
     }
     
     // 调用数据库的批量插入函数
@@ -72,9 +72,19 @@ vector<TianyanCore::LogData> TianyanCore::searchLog(const pair<string, double>& 
     vector<LogData> LogDatas;
     for (const auto& data:result) {
         LogData oneLog;
-        oneLog.id = data.at("id");oneLog.name = data.at("name");oneLog.pos_x = std::stod(data.at("pos_x"));oneLog.pos_y = std::stod(data.at("pos_y"));
-        oneLog.pos_z = std::stod(data.at("pos_z"));oneLog.world = data.at("world");oneLog.obj_id = data.at("obj_id");oneLog.obj_name = data.at("obj_name");oneLog.time = std::stoll(data.at("time"));
-        oneLog.type = data.at("type");oneLog.data = data.at("data");
+        oneLog.uuid = data.at("uuid");
+        oneLog.id = data.at("id");
+        oneLog.name = data.at("name");
+        oneLog.pos_x = std::stod(data.at("pos_x"));
+        oneLog.pos_y = std::stod(data.at("pos_y"));
+        oneLog.pos_z = std::stod(data.at("pos_z"));
+        oneLog.world = data.at("world");
+        oneLog.obj_id = data.at("obj_id");
+        oneLog.obj_name = data.at("obj_name");
+        oneLog.time = std::stoll(data.at("time"));
+        oneLog.type = data.at("type");
+        oneLog.data = data.at("data");
+        oneLog.status = data.at("status");
         LogDatas.push_back(oneLog);
     }
     return LogDatas;
@@ -89,9 +99,19 @@ vector<TianyanCore::LogData> TianyanCore::searchLog(const pair<string, double>& 
     vector<LogData> LogDatas;
     for (const auto& data:result) {
         LogData oneLog;
-        oneLog.id = data.at("id");oneLog.name = data.at("name");oneLog.pos_x = std::stod(data.at("pos_x"));oneLog.pos_y = std::stod(data.at("pos_y"));
-        oneLog.pos_z = std::stod(data.at("pos_z"));oneLog.world = data.at("world");oneLog.obj_id = data.at("obj_id");oneLog.obj_name = data.at("obj_name");oneLog.time = std::stoll(data.at("time"));
-        oneLog.type = data.at("type");oneLog.data = data.at("data");
+        oneLog.uuid = data.at("uuid");
+        oneLog.id = data.at("id");
+        oneLog.name = data.at("name");
+        oneLog.pos_x = std::stod(data.at("pos_x"));
+        oneLog.pos_y = std::stod(data.at("pos_y"));
+        oneLog.pos_z = std::stod(data.at("pos_z"));
+        oneLog.world = data.at("world");
+        oneLog.obj_id = data.at("obj_id");
+        oneLog.obj_name = data.at("obj_name");
+        oneLog.time = std::stoll(data.at("time"));
+        oneLog.type = data.at("type");
+        oneLog.data = data.at("data");
+        oneLog.status = data.at("status");
         
         // 首先检查世界是否匹配
         if (oneLog.world != world) {
