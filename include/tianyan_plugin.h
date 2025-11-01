@@ -262,10 +262,12 @@ public:
                 }
                 //待施工
             }
-            else if (args.size() == 2) {
+            else if (args.size() >= 2) {
                 try {
                     const double r = stod(args[0]);
                     const double time = stod(args[1]);
+                    const string search_key_type = args.size() > 2 ? args[2] : "";
+                    const string search_key = args.size() > 3 ? args[3] : "";
                     const string world = sender.asPlayer()->getLocation().getDimension()->getName();
                     const double x = sender.asPlayer()->getLocation().getX();
                     const double y = sender.asPlayer()->getLocation().getY();
@@ -273,7 +275,46 @@ public:
                     if (const auto searchData = tyCore.searchLog({"",time},x, y, z, r, world); searchData.empty()) {
                         sender.sendErrorMessage(Tran.getLocal("No log found"));
                     } else {
-                        showLogMenu(*sender.asPlayer(), searchData);
+                        if (!search_key_type.empty() && !search_key.empty()) {
+                            vector<TianyanCore::LogData> key_logData;
+                            if (search_key_type == "source_id") {
+                                for (auto &logData : searchData) {
+                                    if (logData.id == search_key) {
+                                        key_logData.push_back(logData);
+                                    }
+                                }
+                            } else if (search_key_type == "source_name") {
+                                for (auto &logData : searchData) {
+                                    if (logData.name == search_key) {
+                                        key_logData.push_back(logData);
+                                    }
+                                }
+                            } else if (search_key_type == "target_id") {
+                                for (auto &logData : searchData) {
+                                    if (logData.obj_id == search_key) {
+                                        key_logData.push_back(logData);
+                                    }
+                                }
+                            } else if (search_key_type == "target_name") {
+                                for (auto &logData : searchData) {
+                                    if (logData.obj_name == search_key) {}
+                                }
+                            } else if (search_key_type == "type") {
+                                for (auto &logData : searchData) {
+                                    if (logData.type == search_key) {
+                                        key_logData.push_back(logData);
+                                    }
+                                }
+                            }
+                            if (!key_logData.empty()) {
+                                showLogMenu(*sender.asPlayer(), key_logData);
+                            }
+                            else {
+                                sender.sendErrorMessage(Tran.getLocal("No log found"));
+                            }
+                        } else {
+                            showLogMenu(*sender.asPlayer(), searchData);
+                        }
                     }
 
                 } catch (const std::exception &e) {
@@ -292,10 +333,12 @@ public:
                 }
                 //待施工
             }
-            else if (args.size() == 2) {
+            else if (args.size() >=2) {
                 try {
                     const double r = stod(args[0]);
                     const double time = stod(args[1]);
+                    const string source_key_type = args.size() > 2 ? args[2] : "";
+                    const string source_key = args.size() > 3 ? args[3] : "";
                     const string world = sender.asPlayer()->getLocation().getDimension()->getName();
                     const double x = sender.asPlayer()->getLocation().getX();
                     const double y = sender.asPlayer()->getLocation().getY();
@@ -304,10 +347,33 @@ public:
                         sender.sendErrorMessage(Tran.getLocal("No log found"));
                     } else {
                         //回溯逻辑
-                        for (auto& logData:searchData) {
+                        for (auto& logData : std::ranges::reverse_view(searchData)) {
                             //跳过取消掉的事件
                             if (logData.data == "canceled") {
                                 continue;
+                            }
+                            //输入了查找指定源
+                            if (!source_key_type.empty() && !source_key.empty()) {
+                                //查询ID而事件非源ID
+                                if (source_key_type == "source_id" && logData.id != source_key) {
+                                    continue;
+                                }
+                                //查询名称而事件非源名称
+                                if (source_key_type == "source_name" && logData.name != source_key) {
+                                    continue;
+                                }
+                                //查询ID而事件非目标ID
+                                if (source_key_type == "target_id" && logData.obj_id != source_key) {
+                                    continue;
+                                }
+                                //查询名称而事件非目标名称
+                                if (source_key_type == "target_name" && logData.obj_name != source_key) {
+                                    continue;
+                                }
+                                //查询类型而事件非指定类型
+                                if (source_key_type == "type" && logData.type != source_key) {
+                                    continue;
+                                }
                             }
                             //破坏和爆炸方块的恢复
                             if (logData.type == "block_break" | logData.type == "block_break_bomb" | (logData.type == "actor_bomb" && logData.id == "minecraft:tnt")) {
@@ -326,7 +392,16 @@ public:
                                     command_str = "setblock " + pos + " " + logData.obj_id + hand_block[1];
                                     endstone::CommandSenderWrapper wrapper_sender(sender);
                                     (void)getServer().dispatchCommand(wrapper_sender,command_str);
+                                    cout << logData.time << endl;
                                 }
+                            }
+                            //放置方块的恢复
+                            else if (logData.type == "block_place") {
+                                string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
+                                string command_str;
+                                command_str = "setblock " + pos + " " + "minecraft:air";
+                                endstone::CommandSenderWrapper wrapper_sender(sender);
+                                (void)getServer().dispatchCommand(wrapper_sender,command_str);
                             }
                         }
                     }
