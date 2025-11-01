@@ -37,6 +37,7 @@
 #include <endstone/inventory/player_inventory.h>
 #include <endstone/event/player/player_pickup_item_event.h>
 #include <endstone/endstone.hpp>
+#include <endstone/form/controls/slider.h>
 
 
 using namespace std;
@@ -277,7 +278,39 @@ public:
                     sender.sendErrorMessage(Tran.getLocal("Console not support menu"));
                     return false;
                 }
-                //待施工
+                endstone::ModalForm tyMenu;
+                tyMenu.setTitle(Tran.getLocal("Log Browser"));
+                endstone::Slider radius;
+                endstone::Slider Time;
+                endstone::Dropdown keyType;
+                endstone::TextInput keyWords;
+
+                radius.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Radius"));radius.setDefaultValue(15);radius.setMin(1);radius.setMax(50);radius.setStep(1);
+                Time.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Lookback Time (hours)"));Time.setDefaultValue(12);Time.setMin(1);Time.setMax(168);Time.setStep(1);
+                keyType.setLabel(Tran.getLocal("Search By"));
+                keyType.setOptions({Tran.getLocal("Source ID"),Tran.getLocal("Source Name"),Tran.getLocal("Target ID"),Tran.getLocal("Target Name"),Tran.getLocal("Action")});
+                keyWords.setLabel(Tran.getLocal("Keywords"));
+                keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
+                tyMenu.setControls({radius,Time,keyType,keyWords});
+                tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
+                    json response_json = json::parse(response);
+                    const int r = response_json[0];
+                    const int time = response_json[1];
+                    const int search_key_type = response_json[2];
+                    const string search_key = response_json[3];
+                    std::ostringstream cmd;
+                    if (!search_key.empty()) {
+                        string key_type;
+                        if (search_key_type == 0) {key_type  = "source_id";} else if (search_key_type == 1) {key_type  = "source_name";} else if (search_key_type == 2) {key_type  = "target_id";}
+                        else if (search_key_type == 3) {key_type  = "target_name";} else if (search_key_type == 4) {key_type  = "action";}
+                        cmd << "ty " << r << " " << time << " " <<key_type << " " << "\"" << search_key << "\"" ;
+                        (void)p->performCommand(cmd.str());
+                    } else {
+                        cmd << "ty " << r << " " << time;
+                        (void)p->performCommand(cmd.str());
+                    }
+                });
+                sender.asPlayer()->sendForm(tyMenu);
             }
             else if (args.size() >= 2) {
                 try {
@@ -316,7 +349,7 @@ public:
                                 for (auto &logData : searchData) {
                                     if (logData.obj_name == search_key) {}
                                 }
-                            } else if (search_key_type == "type") {
+                            } else if (search_key_type == "action") {
                                 for (auto &logData : searchData) {
                                     if (logData.type == search_key) {
                                         key_logData.push_back(logData);
@@ -325,12 +358,14 @@ public:
                             }
                             if (!key_logData.empty()) {
                                 showLogMenu(*sender.asPlayer(), key_logData);
+                                sender.sendMessage(endstone::ColorFormat::Yellow+Tran.getLocal("Display all logs about")+"` "+search_key+" `");
                             }
                             else {
                                 sender.sendErrorMessage(Tran.getLocal("No log found"));
                             }
                         } else {
                             showLogMenu(*sender.asPlayer(), searchData);
+                            sender.sendMessage(endstone::ColorFormat::Yellow+Tran.getLocal("Display all logs"));
                         }
                     }
 
@@ -349,6 +384,39 @@ public:
                     return false;
                 }
                 //待施工
+                endstone::ModalForm tyMenu;
+                tyMenu.setTitle(Tran.getLocal("Revert Menu"));
+                endstone::Slider radius;
+                endstone::Slider Time;
+                endstone::Dropdown keyType;
+                endstone::TextInput keyWords;
+
+                radius.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Radius"));radius.setDefaultValue(15);radius.setMin(1);radius.setMax(50);radius.setStep(1);
+                Time.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Lookback Time (hours)"));Time.setDefaultValue(12);Time.setMin(1);Time.setMax(168);Time.setStep(1);
+                keyType.setLabel(Tran.getLocal("Search By"));
+                keyType.setOptions({Tran.getLocal("Source ID"),Tran.getLocal("Source Name"),Tran.getLocal("Target ID"),Tran.getLocal("Target Name"),Tran.getLocal("Action")});
+                keyWords.setLabel(Tran.getLocal("Keywords"));
+                keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
+                tyMenu.setControls({radius,Time,keyType,keyWords});
+                tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
+                    json response_json = json::parse(response);
+                    const int r = response_json[0];
+                    const int time = response_json[1];
+                    const int search_key_type = response_json[2];
+                    const string search_key = response_json[3];
+                    std::ostringstream cmd;
+                    if (!search_key.empty()) {
+                        string key_type;
+                        if (search_key_type == 0) {key_type  = "source_id";} else if (search_key_type == 1) {key_type  = "source_name";} else if (search_key_type == 2) {key_type  = "target_id";}
+                        else if (search_key_type == 3) {key_type  = "target_name";} else if (search_key_type == 4) {key_type  = "action";}
+                        cmd << "tyback " << r << " " << time << " " <<key_type << " " << "\"" << search_key << "\"" ;
+                        (void)p->performCommand(cmd.str());
+                    } else {
+                        cmd << "tyback " << r << " " << time;
+                        (void)p->performCommand(cmd.str());
+                    }
+                });
+                sender.asPlayer()->sendForm(tyMenu);
             }
             else if (args.size() >=2) {
                 try {

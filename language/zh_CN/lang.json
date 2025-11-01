@@ -35,5 +35,14 @@
   "The": "第",
   "Page": "页",
   "Status": "状态",
-  "This event has been reverted": "此事件已被回溯"
+  "This event has been reverted": "此事件已被回溯",
+  "Log Browser": "日志查询器",
+  "Lookback Time (hours)": "回溯时间 (小时)",
+  "Radius": "半径",
+  "Search By": "搜索方式",
+  "Keywords": "关键词",
+  "Please enter keywords": "请输入关键词",
+  "Display all logs about": "展示全部日志关于",
+  "Display all logs": "展示全部日志",
+  "Revert Menu": "回溯菜单"
 }
