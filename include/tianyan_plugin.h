@@ -247,7 +247,7 @@ public:
             getLogger().error(Tran.getLocal("Config file error!Use default config")+","+e.what());
         }
         //定期写入
-        auto_write_task = getServer().getScheduler().runTaskTimer(*this, [&]() {logsCacheWrite();},0,100);
+        auto_write_task = getServer().getScheduler().runTaskTimer(*this, [&]() {logsCacheWrite();},0,60);
         //注册事件
         registerEvent<endstone::BlockBreakEvent>(onBlockBreak);
         registerEvent<endstone::BlockPlaceEvent>(onBlockPlace);
@@ -492,6 +492,20 @@ public:
                                 string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
                                 string command_str;
                                 command_str = "setblock " + pos + " " + "minecraft:air";
+                                endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
+                                (void)getServer().dispatchCommand(wrapper_sender,command_str);
+                                // 将已回溯的事件UUID和状态添加到缓存中
+                                revertStatusCache.emplace_back(logData.uuid, "reverted");
+                            }
+                            //复活吧我的生物
+                            else if (logData.type == "entity_die") {
+                                string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
+                                string command_str;
+                                std::string obj_id = logData.obj_id;
+                                if (size_t vpos = obj_id.find("villager_v2"); vpos != std::string::npos) {
+                                    obj_id.replace(vpos, 11, "villager");
+                                }
+                                command_str = "summon " + obj_id + " " + pos;
                                 endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
                                 (void)getServer().dispatchCommand(wrapper_sender,command_str);
                                 // 将已回溯的事件UUID和状态添加到缓存中

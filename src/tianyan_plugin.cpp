@@ -22,7 +22,7 @@ ENDSTONE_PLUGIN("tianyan_plugin", "1.2.0dev2", TianyanPlugin)
             .usages("/tyback",
                     "/tyback <r: float> <time: float>",
                     "/tyback <r: float> <time: float> <source_id | source_name | target_id | target_name> <keywords: str>",
-                    "/tyback <r: float> <time: float> <action> <block_break | block_place | entity_damage | player_right_click_block | player_right_click_entity | entity_bomb | block_break_bomb | piston_extend | piston_retract | entity_die | player_pickup_item>"
+                    "/tyback <r: float> <time: float> <action> <block_break | block_place | player_right_click_block | block_break_bomb | entity_die>"
                     )
             .permissions("ty.command.op");
 
