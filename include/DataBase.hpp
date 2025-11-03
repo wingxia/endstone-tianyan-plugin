@@ -510,6 +510,33 @@ public:
         return querySQL_many(sql, result);
     }
 
+    // 新增带坐标和世界过滤的搜索函数
+    int searchLog(std::vector<std::map<std::string, std::string>> &result,
+                  const std::pair<std::string, double>& searchCriteria,
+                  double x, double y, double z, double r, const std::string& world) const {
+        // 获取当前时间戳（秒）
+        const long long currentTime = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        
+        // 计算时间范围（秒），支持小数小时（如0.5表示半小时）
+        const long long timeThreshold = currentTime - static_cast<long long>(searchCriteria.second * 3600);
+        
+        // 构建SQL查询语句，包含关键词匹配、时间范围以及坐标范围过滤
+        const std::string sql = "SELECT * FROM LOGDATA WHERE "
+                               "(name LIKE '%" + searchCriteria.first +
+                               "%' OR type LIKE '%" + searchCriteria.first + 
+                               "%' OR data LIKE '%" + searchCriteria.first + 
+                               "%') AND time >= " + std::to_string(timeThreshold) +
+                               " AND world = '" + world + "'" +
+                               " AND ((pos_x - " + std::to_string(x) + ")*(pos_x - " + std::to_string(x) + ")" +
+                               " + (pos_y - " + std::to_string(y) + ")*(pos_y - " + std::to_string(y) + ")" +
+                               " + (pos_z - " + std::to_string(z) + ")*(pos_z - " + std::to_string(z) + ")" +
+                               ") <= " + std::to_string(r*r) + ";";
+                               
+        // 调用 querySQL_many 函数执行查询，并将结果存储到 result 中
+        return querySQL_many(sql, result);
+    }
+
     //数据库工具
 
     //将逗号字符串分割为vector

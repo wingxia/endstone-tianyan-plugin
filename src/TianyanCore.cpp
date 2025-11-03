@@ -92,7 +92,7 @@ vector<TianyanCore::LogData> TianyanCore::searchLog(const pair<string, double>& 
 
 vector<TianyanCore::LogData> TianyanCore::searchLog(const pair<string, double>& key, const double x, const double y, const double z, const double r, const string& world) const {
     std::vector<std::map<std::string, std::string>> result;
-    Database.searchLog(result,key);
+    Database.searchLog(result, key, x, y, z, r, world);
     if (result.empty()) {
         return {};
     }
@@ -112,21 +112,7 @@ vector<TianyanCore::LogData> TianyanCore::searchLog(const pair<string, double>& 
         oneLog.type = data.at("type");
         oneLog.data = data.at("data");
         oneLog.status = data.at("status");
-        
-        // 首先检查世界是否匹配
-        if (oneLog.world != world) {
-            continue;
-        }
-        
-        // 然后检查坐标是否在指定范围内
-        const double dx = oneLog.pos_x - x;
-        const double dy = oneLog.pos_y - y;
-        const double dz = oneLog.pos_z - z;
-        const double distanceSquared = dx * dx + dy * dy + dz * dz;
-
-        if (const double radiusSquared = r * r; distanceSquared <= radiusSquared) {
-            LogDatas.push_back(oneLog);
-        }
+        LogDatas.push_back(oneLog);
     }
     return LogDatas;
 }

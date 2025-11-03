@@ -259,6 +259,16 @@ public:
         registerEvent<endstone::BlockPistonRetractEvent>(onPistonRetract);
         registerEvent<endstone::ActorDeathEvent>(onActorDie);
         registerEvent<endstone::PlayerPickupItemEvent>(onPlayPickup);
+        const string LOGO = R"(
+  _____   _
+ |_   _| (_)  __ _   _ _    _  _   __ _   _ _
+   | |   | | / _` | | ' \  | || | / _` | | ' \
+   |_|   |_| \__,_| |_||_|  \_, | \__,_| |_||_|
+                            |__/
+        )";
+        getLogger().info(endstone::ColorFormat::Yellow+LOGO);
+        const auto p_version = getServer().getPluginManager().getPlugin("tianyan_plugin")->getDescription().getVersion();
+        getLogger().info(endstone::ColorFormat::Yellow + Tran.getLocal("Tianyan Plugin Version: ") + p_version);
     }
 
     void onDisable() override
@@ -313,9 +323,20 @@ public:
                 sender.asPlayer()->sendForm(tyMenu);
             }
             else if (args.size() >= 2) {
+                if (!sender.asPlayer()) {
+                    return false;
+                }
                 try {
                     const double r = stod(args[0]);
                     const double time = stod(args[1]);
+                    if (r > 100) {
+                        sender.sendErrorMessage(Tran.getLocal("The radius cannot be greater than 100"));
+                        return false;
+                    }
+                    if (time > 672) {
+                        sender.sendErrorMessage(Tran.getLocal("The time cannot be greater than 672"));
+                        return false;
+                    }
                     const string search_key_type = args.size() > 2 ? args[2] : "";
                     const string search_key = args.size() > 3 ? args[3] : "";
                     const string world = sender.asPlayer()->getLocation().getDimension()->getName();
@@ -422,8 +443,15 @@ public:
                 sender.asPlayer()->sendForm(tyMenu);
             }
             else if (args.size() >=2) {
+                if (!sender.asPlayer()) {
+                    return false;
+                }
                 try {
                     const double r = stod(args[0]);
+                    if (r > 100) {
+                        sender.sendErrorMessage(Tran.getLocal("The radius cannot be greater than 100"));
+                        return false;
+                    }
                     const double time = stod(args[1]);
                     const string source_key_type = args.size() > 2 ? args[2] : "";
                     const string source_key = args.size() > 3 ? args[3] : "";
@@ -479,10 +507,10 @@ public:
                                 //右键方块存在状态
                                 if (auto hand_block = DataBase::splitString(logData.data); hand_block[1] != "[]") {
                                     string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
-                                    string command_str;
-                                    command_str = "setblock " + pos + " " + logData.obj_id + hand_block[1];
+                                    std::ostringstream cmd;
+                                    cmd << "setblock " << pos << " " << logData.obj_id << hand_block[1];
                                     endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
-                                    (void)getServer().dispatchCommand(wrapper_sender,command_str);
+                                    (void)getServer().dispatchCommand(wrapper_sender,cmd.str());
                                     // 将已回溯的事件UUID和状态添加到缓存中
                                     revertStatusCache.emplace_back(logData.uuid, "reverted");
                                 }
@@ -490,24 +518,24 @@ public:
                             //放置方块的恢复
                             else if (logData.type == "block_place") {
                                 string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
-                                string command_str;
-                                command_str = "setblock " + pos + " " + "minecraft:air";
+                                std::ostringstream cmd;
+                                cmd << "setblock " << pos << " minecraft:air";
                                 endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
-                                (void)getServer().dispatchCommand(wrapper_sender,command_str);
+                                (void)getServer().dispatchCommand(wrapper_sender,cmd.str());
                                 // 将已回溯的事件UUID和状态添加到缓存中
                                 revertStatusCache.emplace_back(logData.uuid, "reverted");
                             }
                             //复活吧我的生物
                             else if (logData.type == "entity_die") {
                                 string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
-                                string command_str;
                                 std::string obj_id = logData.obj_id;
                                 if (size_t vpos = obj_id.find("villager_v2"); vpos != std::string::npos) {
                                     obj_id.replace(vpos, 11, "villager");
                                 }
-                                command_str = "summon " + obj_id + " " + pos;
+                                std::ostringstream cmd;
+                                cmd << "summon " << obj_id << " " << pos;
                                 endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
-                                (void)getServer().dispatchCommand(wrapper_sender,command_str);
+                                (void)getServer().dispatchCommand(wrapper_sender,cmd.str());
                                 // 将已回溯的事件UUID和状态添加到缓存中
                                 revertStatusCache.emplace_back(logData.uuid, "reverted");
                             }
@@ -845,7 +873,7 @@ public:
         logData.world = event.getBlock().getLocation().getDimension()->getName();
         logData.time = std::time(nullptr);
         logData.type = "piston_extend";
-        auto Face = event.getDirection();
+        const auto Face = event.getDirection();
         string direct;
         if (Face == endstone::BlockFace::Down) {
             direct = "down";

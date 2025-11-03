@@ -4,7 +4,7 @@
 
 #include "tianyan_plugin.h"
 
-ENDSTONE_PLUGIN("tianyan_plugin", "1.2.0dev2", TianyanPlugin)
+ENDSTONE_PLUGIN("tianyan_plugin", "1.2.0-alpha.1", TianyanPlugin)
 {
     description = "A plugin for endstone to record behavior";
 

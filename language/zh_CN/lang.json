@@ -46,5 +46,8 @@
   "Display all logs": "展示全部日志",
   "Revert Menu": "回溯菜单",
   "Nothing happened": "无事发生",
-  "Revert times: ": "回溯次数: "
+  "Revert times: ": "回溯次数: ",
+  "Tianyan Plugin Version: ": "天眼插件版本: ",
+  "The time cannot be greater than 672": "时间无法大于672",
+  "The radius cannot be greater than 100": "半径无法大于100"
 }
