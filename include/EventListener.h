@@ -1,0 +1,327 @@
+//
+// Created by yuhang on 2025/11/6.
+//
+
+#ifndef TIANYAN_EVENTLISTENER_H
+#define TIANYAN_EVENTLISTENER_H
+#include <endstone/endstone.hpp>
+#include "Global.h"
+class EventListener {
+public:
+    explicit EventListener(endstone::Plugin& plugin) : plugin_(plugin) {}
+
+    // 检查是否允许触发事件
+    static bool canTriggerEvent(const string& playername) {
+        const auto now = std::chrono::steady_clock::now();
+
+        // 查找玩家的上次触发时间
+        if (lastTriggerTime.contains(playername)) {
+            const auto lastTime = lastTriggerTime[playername];
+
+            // 如果时间差小于 0.2 秒，不允许触发
+            if (const auto elapsedTime = std::chrono::duration<double>(now - lastTime).count(); elapsedTime < 0.2) {
+                return false;
+            }
+        }
+
+        // 更新玩家的上次触发时间为当前时间
+        lastTriggerTime[playername] = now;
+        return true;
+    }
+
+    static void onBlockBreak(const endstone::BlockBreakEvent& event){
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getPlayer().getType();
+        logData.name = event.getPlayer().getName();
+        logData.pos_x = event.getBlock().getX();
+        logData.pos_y = event.getBlock().getY();
+        logData.pos_z = event.getBlock().getZ();
+        logData.world = event.getBlock().getLocation().getDimension()->getName();
+        logData.obj_id = event.getBlock().getType();
+        logData.time = std::time(nullptr);
+        logData.type = "block_break";
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        const auto block_data = event.getBlock().getData();
+        auto block_states = block_data->getBlockStates();
+        logData.data = fmt::format("{}", block_states);
+        logDataCache.push_back(logData);
+    }
+
+    static void onBlockPlace(const endstone::BlockPlaceEvent& event){
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getPlayer().getType();
+        logData.name = event.getPlayer().getName();
+        logData.pos_x = event.getBlockPlacedState().getX();
+        logData.pos_y = event.getBlockPlacedState().getY();
+        logData.pos_z = event.getBlockPlacedState().getZ();
+        logData.world = event.getBlockPlacedState().getLocation().getDimension()->getName();
+        logData.obj_id = event.getBlockPlacedState().getType();
+        logData.time = std::time(nullptr);
+        logData.type = "block_place";
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        const auto block_data = event.getBlockPlacedState().getData();
+        auto block_states = block_data->getBlockStates();
+        logData.data = fmt::format("{}", block_states);
+        logDataCache.push_back(logData);
+    }
+
+    static void onActorDamage(const endstone::ActorDamageEvent& event){
+        //无名的烂大街生物无需在意
+        if (event.getActor().getNameTag().empty() && ranges::find(no_log_mobs, event.getActor().getType()) != no_log_mobs.end()) {
+            return;
+        }
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+
+        //实体造成伤害
+        if (event.getDamageSource().getActor()) {
+            logData.id = event.getDamageSource().getActor()->getType();
+            logData.name = event.getDamageSource().getActor()->getName();
+            logData.type = "entity_damage";
+        }
+        //其余伤害
+        else {
+            logData.id = event.getDamageSource().getType();
+            logData.type = "damage";
+        }
+        logData.pos_x = event.getActor().getLocation().getX();
+        logData.pos_y = event.getActor().getLocation().getY();
+        logData.pos_z = event.getActor().getLocation().getZ();
+        logData.world = event.getActor().getLocation().getDimension()->getName();
+        logData.obj_id = event.getActor().getType();
+        logData.obj_name = event.getActor().getName();
+        logData.time = std::time(nullptr);
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        auto damage = event.getDamage();
+        logData.data = fmt::format("{}", damage);
+        logDataCache.push_back(logData);
+    }
+
+    static void onPlayerRightClickBlock(const endstone::PlayerInteractEvent& event) {
+        TianyanCore::LogData logData;
+        if (!event.getBlock()) {
+            return;
+        }
+        if (!canTriggerEvent(event.getPlayer().getName())) {
+            return;
+        }
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getPlayer().getType();
+        logData.name = event.getPlayer().getName();
+        logData.pos_x = event.getBlock()->getX();
+        logData.pos_y = event.getBlock()->getY();
+        logData.pos_z = event.getBlock()->getZ();
+        logData.world = event.getPlayer().getLocation().getDimension()->getName();
+        logData.obj_id = event.getBlock()->getType();
+        logData.time = std::time(nullptr);
+        logData.type = "player_right_click_block";
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        string hand_item;
+        if (event.hasItem()) {
+            hand_item = event.getItem()->getType().getId();
+        } else {
+            hand_item = "hand";
+        }
+        const auto block_data = event.getBlock()->getData();
+        auto block_states = block_data->getBlockStates();
+        logData.data = fmt::format("{},{}", hand_item,block_states);
+        logDataCache.push_back(logData);
+    }
+
+    static void onPlayerRightClickActor(const endstone::PlayerInteractActorEvent& event){
+        //无名的烂大街生物无需在意
+        if (event.getActor().getNameTag().empty() && ranges::find(no_log_mobs, event.getActor().getType()) != no_log_mobs.end()) {
+            return;
+        }
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getPlayer().getType();
+        logData.name = event.getPlayer().getName();
+        logData.pos_x = event.getActor().getLocation().getX();
+        logData.pos_y = event.getActor().getLocation().getY();
+        logData.pos_z = event.getActor().getLocation().getZ();
+        logData.world = event.getActor().getLocation().getDimension()->getName();
+        logData.obj_id = event.getActor().getType();
+        logData.obj_name = event.getActor().getName();
+        logData.time = std::time(nullptr);
+        logData.type = "player_right_click_entity";
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        string hand_item;
+        if (event.getPlayer().getInventory().getItemInMainHand()) {
+            hand_item = event.getPlayer().getInventory().getItemInMainHand()->getType().getId();
+        } else {
+            hand_item = "hand";
+        }
+        logData.data = fmt::format("{}", hand_item);
+        logDataCache.push_back(logData);
+    }
+
+    static void onActorBomb(const endstone::ActorExplodeEvent& event) {
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getActor().getType();
+        logData.name = event.getActor().getName();
+        logData.pos_x = event.getLocation().getX();
+        logData.pos_y = event.getLocation().getY();
+        logData.pos_z = event.getLocation().getZ();
+        logData.world = event.getLocation().getDimension()->getName();
+        if (!event.getBlockList().empty()) {
+            logData.obj_name = "Block";
+        }
+        logData.time = std::time(nullptr);
+        logData.type = "entity_bomb";
+        auto block_num = event.getBlockList().size();
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+            logDataCache.push_back(logData);
+        } else {
+            logData.data = fmt::format("{}", block_num);
+            logDataCache.push_back(logData);
+            for (const auto& block : event.getBlockList()) {
+                // 方块类型
+                TianyanCore::LogData bomb_data;
+                bomb_data.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+                bomb_data.id = event.getActor().getType();
+                bomb_data.name = event.getActor().getName();
+                bomb_data.pos_x = block->getX();
+                bomb_data.pos_y = block->getY();
+                bomb_data.pos_z = block->getZ();
+                bomb_data.world = block->getLocation().getDimension()->getName();
+                bomb_data.obj_id = block->getType();
+                bomb_data.time = std::time(nullptr);
+                bomb_data.type = "block_break_bomb";
+                bomb_data.data = fmt::format("{}", block->getData()->getBlockStates());
+                logDataCache.push_back(bomb_data);
+            }
+        }
+    }
+
+    static void onPistonExtend(const endstone::BlockPistonExtendEvent&event) {
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getBlock().getType();
+        logData.pos_x = event.getBlock().getX();
+        logData.pos_y = event.getBlock().getY();
+        logData.pos_z = event.getBlock().getZ();
+        logData.world = event.getBlock().getLocation().getDimension()->getName();
+        logData.time = std::time(nullptr);
+        logData.type = "piston_extend";
+        const auto Face = event.getDirection();
+        string direct;
+        if (Face == endstone::BlockFace::Down) {
+            direct = "down";
+        } else if (Face == endstone::BlockFace::Up) {
+            direct = "up";
+        } else if (Face == endstone::BlockFace::North) {
+            direct = "north";
+        } else if (Face == endstone::BlockFace::South) {
+            direct = "south";
+        } else if (Face == endstone::BlockFace::West) {
+            direct = "west";
+        } else if (Face == endstone::BlockFace::East) {
+            direct = "east";
+        }
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        logData.data = fmt::format("{},{}", direct, event.getBlock().getData()->getBlockStates());
+
+
+        logDataCache.push_back(logData);
+    }
+
+    static void onPistonRetract(const endstone::BlockPistonRetractEvent&event) {
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getBlock().getType();
+        logData.pos_x = event.getBlock().getX();
+        logData.pos_y = event.getBlock().getY();
+        logData.pos_z = event.getBlock().getZ();
+        logData.world = event.getBlock().getLocation().getDimension()->getName();
+        logData.time = std::time(nullptr);
+        logData.type = "piston_retract";
+        auto Face = event.getDirection();
+        string direct;
+        if (Face == endstone::BlockFace::Down) {
+            direct = "down";
+        } else if (Face == endstone::BlockFace::Up) {
+            direct = "up";
+        } else if (Face == endstone::BlockFace::North) {
+            direct = "north";
+        } else if (Face == endstone::BlockFace::South) {
+            direct = "south";
+        } else if (Face == endstone::BlockFace::West) {
+            direct = "west";
+        } else if (Face == endstone::BlockFace::East) {
+            direct = "east";
+        }
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        logData.data = fmt::format("{},{}", direct, event.getBlock().getData()->getBlockStates());
+
+        logDataCache.push_back(logData);
+    }
+
+    static void onActorDie(const endstone::ActorDeathEvent&event) {
+        //无名的烂大街生物无需在意
+        if (event.getActor().getNameTag().empty() && ranges::find(no_log_mobs, event.getActor().getType()) != no_log_mobs.end()) {
+            return;
+        }
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.pos_x = event.getActor().getLocation().getX();
+        logData.pos_y = event.getActor().getLocation().getY();
+        logData.pos_z = event.getActor().getLocation().getZ();
+        logData.world = event.getActor().getLocation().getDimension()->getName();
+        logData.obj_id = event.getActor().getType();
+        logData.obj_name = event.getActor().getName();
+        logData.time = std::time(nullptr);
+        logData.type = "entity_die";
+        logDataCache.push_back(logData);
+    }
+
+    static void onPlayPickup(const endstone::PlayerPickupItemEvent&event) {
+        TianyanCore::LogData logData;
+        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.id = event.getPlayer().getType();
+        logData.name = event.getPlayer().getName();
+        logData.pos_x = event.getPlayer().getLocation().getX();
+        logData.pos_y = event.getPlayer().getLocation().getY();
+        logData.pos_z = event.getPlayer().getLocation().getZ();
+        logData.world = event.getPlayer().getLocation().getDimension()->getName();
+        logData.obj_id = event.getItem().getItemStack()->getType().getId();
+        logData.obj_name = event.getItem().getName();
+        logData.time = std::time(nullptr);
+        logData.type = "player_pickup_item";
+        if (event.isCancelled()) {
+            logData.status = "canceled";
+        }
+        logDataCache.push_back(logData);
+    }
+
+    void onPlayerJoin(const endstone::PlayerJoinEvent &event) {
+        if (!event.getPlayer().asPlayer()) return;
+        std::ostringstream out;
+        out << endstone::ColorFormat::Yellow << Tran.getLocal("Player") << " " << event.getPlayer().getName() << " " << Tran.getLocal("joined server!")
+        << " " <<Tran.getLocal("Device OS: ")<< event.getPlayer().getDeviceOS() << " " << Tran.getLocal("Device ID: ") << event.getPlayer().getDeviceId();
+        plugin_.getServer().getLogger().info(out.str());
+    }
+
+private:
+    endstone::Plugin &plugin_;
+};
+
+#endif //TIANYAN_EVENTLISTENER_H

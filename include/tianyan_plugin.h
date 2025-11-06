@@ -6,64 +6,29 @@
 #include <endstone/plugin/plugin.h>
 #include <string>
 #include <filesystem>
-#include <nlohmann/json.hpp>
 #include <fstream>
 #include "translate.h"
 #include "DataBase.hpp"
 #include "TianyanCore.h"
 #include <endstone/player.h>
 #include <endstone/server.h>
-#include <endstone/level/position.h>
-#include <endstone/level/dimension.h>
-#include <endstone/actor/actor.h>
 #include <endstone/event/block/block_break_event.h>
 #include <endstone/event/block/block_place_event.h>
 #include <endstone/event/actor/actor_explode_event.h>
-#include <endstone/event/actor/actor_knockback_event.h>
 #include <endstone/event/actor/actor_death_event.h>
 #include <endstone/event/player/player_interact_event.h>
 #include <endstone/event/player/player_interact_actor_event.h>
 #include <endstone/event/actor/actor_damage_event.h>
 #include <endstone/event/block/block_piston_extend_event.h>
 #include <endstone/event/block/block_piston_retract_event.h>
-#include <endstone/block/block_data.h>
-#include <endstone/block/block_state.h>
-#include <endstone/block/block_face.h>
 #include <endstone/color_format.h>
-#include <endstone/command/command_sender.h>
-#include <endstone/command/command_sender_wrapper.h>
 #include <algorithm>
-#include <endstone/inventory/item_stack.h>
-#include <endstone/inventory/player_inventory.h>
 #include <endstone/event/player/player_pickup_item_event.h>
 #include <endstone/endstone.hpp>
-#include <endstone/form/controls/slider.h>
-
-
-using namespace std;
-using namespace nlohmann;
-//文件目录
-inline string dataPath = "plugins/tianyan_data";
-inline string dbPath = "plugins/tianyan_data/ty_data.db";
-inline string config_path = "plugins/tianyan_data/config.json";
-//配置变量
-inline int max_message_in_10s;
-inline int max_command_in_10s;
-inline vector<string> no_log_mobs;
-//日志缓存
-inline vector<TianyanCore::LogData> logDataCache;
-//语言
-inline translate Tran;
-//初始化其它实例
-inline DataBase Database(dbPath);
-inline TianyanCore tyCore(Database);
-
-// 存储每个玩家的上次触发时间
-inline std::unordered_map<string, std::chrono::steady_clock::time_point> lastTriggerTime;
-//任务
-inline shared_ptr<endstone::Task> auto_write_task;
-// 回溯状态缓存 - 存储需要标记为"reverted"的日志UUID和状态
-inline vector<pair<string, string>> revertStatusCache;
+#include "TianyanProtect.h"
+#include "Global.h"
+#include "EventListener.h"
+#include "Menu.h"
 
 class TianyanPlugin : public endstone::Plugin {
 public:
@@ -138,25 +103,6 @@ public:
         }
     }
 
-    // 检查是否允许触发事件
-    static bool canTriggerEvent(const string& playername) {
-        const auto now = std::chrono::steady_clock::now();
-
-        // 查找玩家的上次触发时间
-        if (lastTriggerTime.contains(playername)) {
-            const auto lastTime = lastTriggerTime[playername];
-
-            // 如果时间差小于 0.2 秒，不允许触发
-            if (const auto elapsedTime = std::chrono::duration<double>(now - lastTime).count(); elapsedTime < 0.2) {
-                return false;
-            }
-        }
-
-        // 更新玩家的上次触发时间为当前时间
-        lastTriggerTime[playername] = now;
-        return true;
-    }
-
     void onLoad() override
     {
         getLogger().info("onLoad is called");
@@ -206,22 +152,21 @@ public:
         };
         logDataCache.clear();
     }
-    
+
     // 批量更新回溯状态
     void updateRevertStatus() const {
         if (revertStatusCache.empty()) {
             return;
         }
-        
+
         // 使用数据库的批量更新方法更新状态
         if (!Database.updateStatusesByUUIDs(revertStatusCache)) {
             getLogger().error("更新回溯状态失败");
         }
-        
+
         // 清空缓存
         revertStatusCache.clear();
     }
-
     void onEnable() override
     {
         getLogger().info("onEnable is called");
@@ -248,17 +193,23 @@ public:
         }
         //定期写入
         auto_write_task = getServer().getScheduler().runTaskTimer(*this, [&]() {logsCacheWrite();},0,60);
+        //完成外部类初始化
+        protect_ = std::make_unique<TianyanProtect>(*this);
+        eventListener_ = std::make_unique<EventListener>(*this);
+        commands_ = std::make_unique<Menu>(*this);
+        menu_ = std::make_unique<Menu>(*this);
         //注册事件
-        registerEvent<endstone::BlockBreakEvent>(onBlockBreak);
-        registerEvent<endstone::BlockPlaceEvent>(onBlockPlace);
-        registerEvent<endstone::ActorDamageEvent>(onActorDamage);
-        registerEvent<endstone::PlayerInteractEvent>(onPlayerRightClickBlock);
-        registerEvent<endstone::PlayerInteractActorEvent>(onPlayerRightClickActor);
-        registerEvent<endstone::ActorExplodeEvent>(onActorBomb);
-        registerEvent<endstone::BlockPistonExtendEvent>(onPistonExtend);
-        registerEvent<endstone::BlockPistonRetractEvent>(onPistonRetract);
-        registerEvent<endstone::ActorDeathEvent>(onActorDie);
-        registerEvent<endstone::PlayerPickupItemEvent>(onPlayPickup);
+        registerEvent<endstone::BlockBreakEvent>(EventListener::onBlockBreak);
+        registerEvent<endstone::BlockPlaceEvent>(EventListener::onBlockPlace);
+        registerEvent<endstone::ActorDamageEvent>(EventListener::onActorDamage);
+        registerEvent<endstone::PlayerInteractEvent>(EventListener::onPlayerRightClickBlock);
+        registerEvent<endstone::PlayerInteractActorEvent>(EventListener::onPlayerRightClickActor);
+        registerEvent<endstone::ActorExplodeEvent>(EventListener::onActorBomb);
+        registerEvent<endstone::BlockPistonExtendEvent>(EventListener::onPistonExtend);
+        registerEvent<endstone::BlockPistonRetractEvent>(EventListener::onPistonRetract);
+        registerEvent<endstone::ActorDeathEvent>(EventListener::onActorDie);
+        registerEvent<endstone::PlayerPickupItemEvent>(EventListener::onPlayPickup);
+        registerEvent(&EventListener::onPlayerJoin, *eventListener_);
         const string LOGO = R"(
   _____   _
  |_   _| (_)  __ _   _ _    _  _   __ _   _ _
@@ -288,39 +239,7 @@ public:
                     sender.sendErrorMessage(Tran.getLocal("Console not support menu"));
                     return false;
                 }
-                endstone::ModalForm tyMenu;
-                tyMenu.setTitle(Tran.getLocal("Log Browser"));
-                endstone::Slider radius;
-                endstone::Slider Time;
-                endstone::Dropdown keyType;
-                endstone::TextInput keyWords;
-
-                radius.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Radius"));radius.setDefaultValue(15);radius.setMin(1);radius.setMax(50);radius.setStep(1);
-                Time.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Lookback Time (hours)"));Time.setDefaultValue(12);Time.setMin(1);Time.setMax(168);Time.setStep(1);
-                keyType.setLabel(Tran.getLocal("Search By"));
-                keyType.setOptions({Tran.getLocal("Source ID"),Tran.getLocal("Source Name"),Tran.getLocal("Target ID"),Tran.getLocal("Target Name"),Tran.getLocal("Action")});
-                keyWords.setLabel(Tran.getLocal("Keywords"));
-                keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
-                tyMenu.setControls({radius,Time,keyType,keyWords});
-                tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
-                    json response_json = json::parse(response);
-                    const int r = response_json[0];
-                    const int time = response_json[1];
-                    const int search_key_type = response_json[2];
-                    const string search_key = response_json[3];
-                    std::ostringstream cmd;
-                    if (!search_key.empty()) {
-                        string key_type;
-                        if (search_key_type == 0) {key_type  = "source_id";} else if (search_key_type == 1) {key_type  = "source_name";} else if (search_key_type == 2) {key_type  = "target_id";}
-                        else if (search_key_type == 3) {key_type  = "target_name";} else if (search_key_type == 4) {key_type  = "action";}
-                        cmd << "ty " << r << " " << time << " " <<key_type << " " << "\"" << search_key << "\"" ;
-                        (void)p->performCommand(cmd.str());
-                    } else {
-                        cmd << "ty " << r << " " << time;
-                        (void)p->performCommand(cmd.str());
-                    }
-                });
-                sender.asPlayer()->sendForm(tyMenu);
+                Menu::tyMenu(*sender.asPlayer());
             }
             else if (args.size() >= 2) {
                 if (!sender.asPlayer()) {
@@ -380,14 +299,14 @@ public:
                                 }
                             }
                             if (!key_logData.empty()) {
-                                showLogMenu(*sender.asPlayer(), key_logData);
+                                Menu::showLogMenu(*sender.asPlayer(), key_logData);
                                 sender.sendMessage(endstone::ColorFormat::Yellow+Tran.getLocal("Display all logs about")+"` "+search_key+" `");
                             }
                             else {
                                 sender.sendErrorMessage(Tran.getLocal("No log found"));
                             }
                         } else {
-                            showLogMenu(*sender.asPlayer(), searchData);
+                            Menu::showLogMenu(*sender.asPlayer(), searchData);
                             sender.sendMessage(endstone::ColorFormat::Yellow+Tran.getLocal("Display all logs"));
                         }
                     }
@@ -406,43 +325,7 @@ public:
                     sender.sendErrorMessage(Tran.getLocal("Console not support menu"));
                     return false;
                 }
-                endstone::ModalForm tyMenu;
-                tyMenu.setTitle(Tran.getLocal("Revert Menu"));
-                endstone::Slider radius;
-                endstone::Slider Time;
-                endstone::Dropdown keyType;
-                endstone::TextInput keyWords;
-
-                radius.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Radius"));radius.setDefaultValue(15);radius.setMin(1);radius.setMax(50);radius.setStep(1);
-                Time.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Lookback Time (hours)"));Time.setDefaultValue(12);Time.setMin(1);Time.setMax(168);Time.setStep(1);
-                keyType.setLabel(Tran.getLocal("Search By"));
-                keyType.setOptions({Tran.getLocal("Source ID"),Tran.getLocal("Source Name"),Tran.getLocal("Target ID"),Tran.getLocal("Target Name"),Tran.getLocal("Action")});
-                keyWords.setLabel(Tran.getLocal("Keywords"));
-                keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
-                tyMenu.setControls({radius,Time,keyType,keyWords});
-                tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
-                    json response_json = json::parse(response);
-                    const int r = response_json[0];
-                    const int time = response_json[1];
-                    const int search_key_type = response_json[2];
-                    const string search_key = response_json[3];
-                    std::ostringstream cmd;
-                    if (!search_key.empty()) {
-                        string key_type;
-                        if (search_key_type == 0) {key_type  = "source_id";} else if (search_key_type == 1) {key_type  = "source_name";} else if (search_key_type == 2) {key_type  = "target_id";}
-                        else if (search_key_type == 3) {key_type  = "target_name";} else if (search_key_type == 4) {key_type  = "action";}
-                        if (key_type == "action") {
-                            cmd << "tyback " << r << " " << time << " " <<key_type << " " << search_key ;
-                        } else {
-                            cmd << "tyback " << r << " " << time << " " <<key_type << " " << "\"" << search_key << "\"" ;
-                        }
-                        (void)p->performCommand(cmd.str());
-                    } else {
-                        cmd << "tyback " << r << " " << time;
-                        (void)p->performCommand(cmd.str());
-                    }
-                });
-                sender.asPlayer()->sendForm(tyMenu);
+                Menu::tybackMenu(*sender.asPlayer());
             }
             else if (args.size() >=2) {
                 if (!sender.asPlayer()) {
@@ -564,36 +447,7 @@ public:
                     sender.sendErrorMessage(Tran.getLocal("Console not support menu"));
                     return false;
                 }
-                endstone::ModalForm tyMenu;
-                tyMenu.setTitle(Tran.getLocal("Log Browser"));
-                endstone::Slider Time;
-                endstone::Dropdown keyType;
-                endstone::TextInput keyWords;
-
-                Time.setLabel(endstone::ColorFormat::Red+"*"+endstone::ColorFormat::Reset+Tran.getLocal("Lookback Time (hours)"));Time.setDefaultValue(12);Time.setMin(1);Time.setMax(168);Time.setStep(1);
-                keyType.setLabel(Tran.getLocal("Search By"));
-                keyType.setOptions({Tran.getLocal("Source ID"),Tran.getLocal("Source Name"),Tran.getLocal("Target ID"),Tran.getLocal("Target Name"),Tran.getLocal("Action")});
-                keyWords.setLabel(Tran.getLocal("Keywords"));
-                keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
-                tyMenu.setControls({Time,keyType,keyWords});
-                tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
-                    json response_json = json::parse(response);
-                    const int time = response_json[0];
-                    const int search_key_type = response_json[1];
-                    const string search_key = response_json[2];
-                    std::ostringstream cmd;
-                    if (!search_key.empty()) {
-                        string key_type;
-                        if (search_key_type == 0) {key_type  = "source_id";} else if (search_key_type == 1) {key_type  = "source_name";} else if (search_key_type == 2) {key_type  = "target_id";}
-                        else if (search_key_type == 3) {key_type  = "target_name";} else if (search_key_type == 4) {key_type  = "action";}
-                        cmd << "tys " << time << " " <<key_type << " " << "\"" << search_key << "\"" ;
-                        (void)p->performCommand(cmd.str());
-                    } else {
-                        cmd << "tys " << time;
-                        (void)p->performCommand(cmd.str());
-                    }
-                });
-                sender.asPlayer()->sendForm(tyMenu);
+                Menu::tysMenu(*sender.asPlayer());
             }
             else if (!args.empty()) {
                 if (!sender.asPlayer()) {
@@ -604,9 +458,6 @@ public:
                     const string search_key_type = args.size() > 1 ? args[1] : "";
                     const string search_key = args.size() > 2 ? args[2] : "";
                     const string world = sender.asPlayer()->getLocation().getDimension()->getName();
-                    const double x = sender.asPlayer()->getLocation().getX();
-                    const double y = sender.asPlayer()->getLocation().getY();
-                    const double z = sender.asPlayer()->getLocation().getZ();
                     if (const auto searchData = tyCore.searchLog({"",time}); searchData.empty()) {
                         sender.sendErrorMessage(Tran.getLocal("No log found"));
                     } else {
@@ -644,14 +495,14 @@ public:
                                 }
                             }
                             if (!key_logData.empty()) {
-                                showLogMenu(*sender.asPlayer(), key_logData);
+                                Menu::showLogMenu(*sender.asPlayer(), key_logData);
                                 sender.sendMessage(endstone::ColorFormat::Yellow+Tran.getLocal("Display all logs about")+"` "+search_key+" `");
                             }
                             else {
                                 sender.sendErrorMessage(Tran.getLocal("No log found"));
                             }
                         } else {
-                            showLogMenu(*sender.asPlayer(), searchData);
+                            Menu::showLogMenu(*sender.asPlayer(), searchData);
                             sender.sendMessage(endstone::ColorFormat::Yellow+Tran.getLocal("Display all logs"));
                         }
                     }
@@ -665,414 +516,9 @@ public:
         return true;
     }
 
-    //日志展示菜单
-    static void showLogMenu(endstone::Player &player, const std::vector<TianyanCore::LogData>& logDatas, int page = 0) {
-        // 计算分页信息
-        constexpr int logsPerPage = 30;
-        const int totalPages = (static_cast<int>(logDatas.size()) + logsPerPage - 1) / logsPerPage;
-        const int currentPage = std::min(page, std::max(0, totalPages - 1)); // 确保当前页在有效范围内
-        
-        endstone::ActionForm logMenu;
-        logMenu.setTitle(fmt::format("{} - {} {}/{} {}", Tran.getLocal("Logs"), Tran.getLocal("The"),currentPage + 1, std::max(1, totalPages),Tran.getLocal("Page")));
-        
-        string showLogs;
-        
-        // 如果有日志数据，则显示当前页的日志
-        if (!logDatas.empty() && currentPage < totalPages) {
-            const int startIndex = currentPage * logsPerPage;
-            const int endIndex = std::min(startIndex + logsPerPage, static_cast<int>(logDatas.size()));
-            
-            // 只显示当前页的日志（倒序显示）
-            std::vector<TianyanCore::LogData> pageLogs;
-            for (int i = endIndex - 1; i >= startIndex; --i) {
-                pageLogs.push_back(logDatas[i]);
-            }
-            
-            for (const auto& logData : pageLogs) {
-                // 构建要显示的日志信息
-                std::vector<std::pair<std::string, std::string>> logFields;
-                
-                // 名字不为空时添加源名称
-                if (!logData.name.empty()) {
-                    logFields.emplace_back(Tran.getLocal("Source Name"), logData.name);
-                }
-                
-                // 根据是否是玩家添加不同类型的信息
-                if (logData.id == "minecraft:player") {
-                    logFields.emplace_back(Tran.getLocal("Source Type"), Tran.getLocal("Player"));
-                }
-                else if (!logData.id.empty()){
-                    logFields.emplace_back(Tran.getLocal("Source ID"), logData.id);
-                }
-                
-                // 添加行为类型
-                logFields.emplace_back(Tran.getLocal("Action"), Tran.getLocal(logData.type));
-
-                // 添加位置信息
-                logFields.emplace_back(Tran.getLocal("Position"),
-                                      fmt::format("{:.2f},{:.2f},{:.2f}", logData.pos_x, logData.pos_y, logData.pos_z));
-                
-                // 添加时间信息
-                logFields.emplace_back(Tran.getLocal("Time"), TianyanCore::timestampToString(logData.time));
-                
-                // 根据目标名称和ID是否存在添加相应信息
-                if (!logData.obj_name.empty()) {
-                    logFields.emplace_back(Tran.getLocal("Target Name"), Tran.getLocal(logData.obj_name));
-                }
-                
-                if (!logData.obj_id.empty()) {
-                    logFields.emplace_back(Tran.getLocal("Target ID"), logData.obj_id);
-                }
-                
-                // 添加数据信息
-                if (!logData.data.empty()){
-                    //对手持物品交互进行处理
-                    if (logData.type == "player_right_click_block") {
-                        auto hand_block = DataBase::splitString(logData.data);
-                        logFields.emplace_back(Tran.getLocal("Item in Hand"), hand_block[0]);
-                        if (hand_block[1] != "[]") {
-                            logFields.emplace_back(Tran.getLocal("Data"), hand_block[1]);
-                        }
-                    } else {
-                        if (logData.data != "[]") {
-                            logFields.emplace_back(Tran.getLocal("Data"), logData.data);
-                        }
-                    }
-                }
-
-                //事件是否取消或被恢复
-                if (logData.status == "canceled") {
-                    logFields.emplace_back(Tran.getLocal("Status"), Tran.getLocal("This event has been canceled"));
-                } else if (logData.status == "reverted") {
-                    logFields.emplace_back(Tran.getLocal("Status"), Tran.getLocal("This event has been reverted"));
-                }
-                
-                // 格式化输出
-                for (const auto&[fst, snd] : logFields) {
-                    showLogs += fmt::format("{}: {}\n", fst, snd);
-                }
-                
-                showLogs += "--------------------------------\n\n";
-            }
-        } else {
-            // 没有日志数据
-            showLogs = Tran.getLocal("No log found");
-        }
-        
-        logMenu.setContent(endstone::ColorFormat::Yellow + showLogs);
-        
-        // 设置翻页按钮
-        std::vector<std::variant<endstone::Button, endstone::Divider, endstone::Header, endstone::Label>> controls;
-
-        // 添加上一页按钮（如果有多页）
-        if (totalPages > 1) {
-            endstone::Button pageUp;
-            pageUp.setText(Tran.getLocal("Page Up"));
-            pageUp.setOnClick([=, &player](endstone::Player*) {
-                // 如果是第一页，则跳转到最后一页；否则上一页
-                const int prevPage = (currentPage == 0) ? (totalPages - 1) : (currentPage - 1);
-                showLogMenu(player, logDatas, prevPage);
-            });
-            controls.emplace_back(pageUp);
-        }
-
-        // 添加下一页按钮（如果有多页）
-        if (totalPages > 1) {
-            endstone::Button pageDown;
-            pageDown.setText(Tran.getLocal("Page Down"));
-            pageDown.setOnClick([=, &player](endstone::Player*) {
-                // 如果是最后一页，则回到第一页；否则下一页
-                const int nextPage = (currentPage + 1) % totalPages;
-                showLogMenu(player, logDatas, nextPage);
-            });
-            controls.emplace_back(pageDown);
-        }
-        
-        logMenu.setControls(controls);
-        player.sendForm(logMenu);
-    }
-
-    static void onBlockBreak(const endstone::BlockBreakEvent& event){
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getPlayer().getType();
-        logData.name = event.getPlayer().getName();
-        logData.pos_x = event.getBlock().getX();
-        logData.pos_y = event.getBlock().getY();
-        logData.pos_z = event.getBlock().getZ();
-        logData.world = event.getBlock().getLocation().getDimension()->getName();
-        logData.obj_id = event.getBlock().getType();
-        logData.time = std::time(nullptr);
-        logData.type = "block_break";
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        const auto block_data = event.getBlock().getData();
-        auto block_states = block_data->getBlockStates();
-        logData.data = fmt::format("{}", block_states);
-        logDataCache.push_back(logData);
-    }
-
-    static void onBlockPlace(const endstone::BlockPlaceEvent& event){
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getPlayer().getType();
-        logData.name = event.getPlayer().getName();
-        logData.pos_x = event.getBlockPlacedState().getX();
-        logData.pos_y = event.getBlockPlacedState().getY();
-        logData.pos_z = event.getBlockPlacedState().getZ();
-        logData.world = event.getBlockPlacedState().getLocation().getDimension()->getName();
-        logData.obj_id = event.getBlockPlacedState().getType();
-        logData.time = std::time(nullptr);
-        logData.type = "block_place";
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        const auto block_data = event.getBlockPlacedState().getData();
-        auto block_states = block_data->getBlockStates();
-        logData.data = fmt::format("{}", block_states);
-        logDataCache.push_back(logData);
-    }
-
-    static void onActorDamage(const endstone::ActorDamageEvent& event){
-        //无名的烂大街生物无需在意
-        if (event.getActor().getNameTag().empty() && ranges::find(no_log_mobs, event.getActor().getType()) != no_log_mobs.end()) {
-            return;
-        }
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-
-        //实体造成伤害
-        if (event.getDamageSource().getActor()) {
-            logData.id = event.getDamageSource().getActor()->getType();
-            logData.name = event.getDamageSource().getActor()->getName();
-            logData.type = "entity_damage";
-        }
-        //其余伤害
-        else {
-            logData.id = event.getDamageSource().getType();
-            logData.type = "damage";
-        }
-        logData.pos_x = event.getActor().getLocation().getX();
-        logData.pos_y = event.getActor().getLocation().getY();
-        logData.pos_z = event.getActor().getLocation().getZ();
-        logData.world = event.getActor().getLocation().getDimension()->getName();
-        logData.obj_id = event.getActor().getType();
-        logData.obj_name = event.getActor().getName();
-        logData.time = std::time(nullptr);
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        auto damage = event.getDamage();
-        logData.data = fmt::format("{}", damage);
-        logDataCache.push_back(logData);
-    }
-
-    static void onPlayerRightClickBlock(const endstone::PlayerInteractEvent& event) {
-        TianyanCore::LogData logData;
-        if (!event.getBlock()) {
-            return;
-        }
-        if (!canTriggerEvent(event.getPlayer().getName())) {
-            return;
-        }
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getPlayer().getType();
-        logData.name = event.getPlayer().getName();
-        logData.pos_x = event.getBlock()->getX();
-        logData.pos_y = event.getBlock()->getY();
-        logData.pos_z = event.getBlock()->getZ();
-        logData.world = event.getPlayer().getLocation().getDimension()->getName();
-        logData.obj_id = event.getBlock()->getType();
-        logData.time = std::time(nullptr);
-        logData.type = "player_right_click_block";
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        string hand_item;
-        if (event.hasItem()) {
-            hand_item = event.getItem()->getType().getId();
-        } else {
-            hand_item = "hand";
-        }
-        const auto block_data = event.getBlock()->getData();
-        auto block_states = block_data->getBlockStates();
-        logData.data = fmt::format("{},{}", hand_item,block_states);
-        logDataCache.push_back(logData);
-    }
-
-    static void onPlayerRightClickActor(const endstone::PlayerInteractActorEvent& event){
-        //无名的烂大街生物无需在意
-        if (event.getActor().getNameTag().empty() && ranges::find(no_log_mobs, event.getActor().getType()) != no_log_mobs.end()) {
-            return;
-        }
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getPlayer().getType();
-        logData.name = event.getPlayer().getName();
-        logData.pos_x = event.getActor().getLocation().getX();
-        logData.pos_y = event.getActor().getLocation().getY();
-        logData.pos_z = event.getActor().getLocation().getZ();
-        logData.world = event.getActor().getLocation().getDimension()->getName();
-        logData.obj_id = event.getActor().getType();
-        logData.obj_name = event.getActor().getName();
-        logData.time = std::time(nullptr);
-        logData.type = "player_right_click_entity";
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        string hand_item;
-        if (event.getPlayer().getInventory().getItemInMainHand()) {
-            hand_item = event.getPlayer().getInventory().getItemInMainHand()->getType().getId();
-        } else {
-            hand_item = "hand";
-        }
-        logData.data = fmt::format("{}", hand_item);
-        logDataCache.push_back(logData);
-    }
-
-    static void onActorBomb(const endstone::ActorExplodeEvent& event) {
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getActor().getType();
-        logData.name = event.getActor().getName();
-        logData.pos_x = event.getLocation().getX();
-        logData.pos_y = event.getLocation().getY();
-        logData.pos_z = event.getLocation().getZ();
-        logData.world = event.getLocation().getDimension()->getName();
-        if (!event.getBlockList().empty()) {
-            logData.obj_name = "Block";
-        }
-        logData.time = std::time(nullptr);
-        logData.type = "entity_bomb";
-        auto block_num = event.getBlockList().size();
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-            logDataCache.push_back(logData);
-        } else {
-            logData.data = fmt::format("{}", block_num);
-            logDataCache.push_back(logData);
-            for (const auto& block : event.getBlockList()) {
-                // 方块类型
-                TianyanCore::LogData bomb_data;
-                bomb_data.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-                bomb_data.id = event.getActor().getType();
-                bomb_data.name = event.getActor().getName();
-                bomb_data.pos_x = block->getX();
-                bomb_data.pos_y = block->getY();
-                bomb_data.pos_z = block->getZ();
-                bomb_data.world = block->getLocation().getDimension()->getName();
-                bomb_data.obj_id = block->getType();
-                bomb_data.time = std::time(nullptr);
-                bomb_data.type = "block_break_bomb";
-                bomb_data.data = fmt::format("{}", block->getData()->getBlockStates());
-                logDataCache.push_back(bomb_data);
-            }
-        }
-    }
-
-    static void onPistonExtend(const endstone::BlockPistonExtendEvent&event) {
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getBlock().getType();
-        logData.pos_x = event.getBlock().getX();
-        logData.pos_y = event.getBlock().getY();
-        logData.pos_z = event.getBlock().getZ();
-        logData.world = event.getBlock().getLocation().getDimension()->getName();
-        logData.time = std::time(nullptr);
-        logData.type = "piston_extend";
-        const auto Face = event.getDirection();
-        string direct;
-        if (Face == endstone::BlockFace::Down) {
-            direct = "down";
-        } else if (Face == endstone::BlockFace::Up) {
-            direct = "up";
-        } else if (Face == endstone::BlockFace::North) {
-            direct = "north";
-        } else if (Face == endstone::BlockFace::South) {
-            direct = "south";
-        } else if (Face == endstone::BlockFace::West) {
-            direct = "west";
-        } else if (Face == endstone::BlockFace::East) {
-            direct = "east";
-        }
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        logData.data = fmt::format("{},{}", direct, event.getBlock().getData()->getBlockStates());
-
-
-        logDataCache.push_back(logData);
-    }
-
-    static void onPistonRetract(const endstone::BlockPistonRetractEvent&event) {
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getBlock().getType();
-        logData.pos_x = event.getBlock().getX();
-        logData.pos_y = event.getBlock().getY();
-        logData.pos_z = event.getBlock().getZ();
-        logData.world = event.getBlock().getLocation().getDimension()->getName();
-        logData.time = std::time(nullptr);
-        logData.type = "piston_retract";
-        auto Face = event.getDirection();
-        string direct;
-        if (Face == endstone::BlockFace::Down) {
-            direct = "down";
-        } else if (Face == endstone::BlockFace::Up) {
-            direct = "up";
-        } else if (Face == endstone::BlockFace::North) {
-            direct = "north";
-        } else if (Face == endstone::BlockFace::South) {
-            direct = "south";
-        } else if (Face == endstone::BlockFace::West) {
-            direct = "west";
-        } else if (Face == endstone::BlockFace::East) {
-            direct = "east";
-        }
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        logData.data = fmt::format("{},{}", direct, event.getBlock().getData()->getBlockStates());
-
-        logDataCache.push_back(logData);
-    }
-
-    static void onActorDie(const endstone::ActorDeathEvent&event) {
-        //无名的烂大街生物无需在意
-        if (event.getActor().getNameTag().empty() && ranges::find(no_log_mobs, event.getActor().getType()) != no_log_mobs.end()) {
-            return;
-        }
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.pos_x = event.getActor().getLocation().getX();
-        logData.pos_y = event.getActor().getLocation().getY();
-        logData.pos_z = event.getActor().getLocation().getZ();
-        logData.world = event.getActor().getLocation().getDimension()->getName();
-        logData.obj_id = event.getActor().getType();
-        logData.obj_name = event.getActor().getName();
-        logData.time = std::time(nullptr);
-        logData.type = "entity_die";
-        logDataCache.push_back(logData);
-    }
-
-    static void onPlayPickup(const endstone::PlayerPickupItemEvent&event) {
-        TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
-        logData.id = event.getPlayer().getType();
-        logData.name = event.getPlayer().getName();
-        logData.pos_x = event.getPlayer().getLocation().getX();
-        logData.pos_y = event.getPlayer().getLocation().getY();
-        logData.pos_z = event.getPlayer().getLocation().getZ();
-        logData.world = event.getPlayer().getLocation().getDimension()->getName();
-        logData.obj_id = event.getItem().getItemStack()->getType().getId();
-        logData.obj_name = event.getItem().getName();
-        logData.time = std::time(nullptr);
-        logData.type = "player_pickup_item";
-        if (event.isCancelled()) {
-            logData.status = "canceled";
-        }
-        logDataCache.push_back(logData);
-    }
-
+private:
+    std::unique_ptr<TianyanProtect> protect_;
+    std::unique_ptr<EventListener> eventListener_;
+    std::unique_ptr<Menu> commands_;
+    std::unique_ptr<Menu> menu_;
 };

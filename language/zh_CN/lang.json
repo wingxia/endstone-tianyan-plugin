@@ -49,5 +49,8 @@
   "Revert times: ": "回溯次数: ",
   "Tianyan Plugin Version: ": "天眼插件版本: ",
   "The time cannot be greater than 672": "时间无法大于672",
-  "The radius cannot be greater than 100": "半径无法大于100"
+  "The radius cannot be greater than 100": "半径无法大于100",
+  "joined server!": "加入了服务器!",
+  "Device OS: ": "设备系统: ",
+  "Device ID: ": "设备ID: "
 }
