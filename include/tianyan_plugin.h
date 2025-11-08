@@ -22,7 +22,6 @@
 #include <endstone/event/block/block_piston_extend_event.h>
 #include <endstone/event/block/block_piston_retract_event.h>
 #include <endstone/color_format.h>
-#include <algorithm>
 #include <endstone/event/player/player_pickup_item_event.h>
 #include <endstone/endstone.hpp>
 #include "TianyanProtect.h"

@@ -157,7 +157,7 @@ public:
         keyWords.setLabel(Tran.getLocal("Keywords"));
         keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
         tyMenu.setControls({radius,Time,keyType,keyWords});
-        tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
+        tyMenu.setOnSubmit([=](const endstone::Player *p,const string& response) {
             json response_json = json::parse(response);
             const int r = response_json[0];
             const int time = response_json[1];
@@ -196,7 +196,7 @@ public:
         keyWords.setLabel(Tran.getLocal("Keywords"));
         keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
         tyMenu.setControls({Time,keyType,keyWords});
-        tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
+        tyMenu.setOnSubmit([=](const endstone::Player *p,const string& response) {
             json response_json = json::parse(response);
             const int time = response_json[0];
             const int search_key_type = response_json[1];
@@ -232,7 +232,7 @@ public:
         keyWords.setLabel(Tran.getLocal("Keywords"));
         keyWords.setPlaceholder(Tran.getLocal("Please enter keywords"));
         tyMenu.setControls({radius,Time,keyType,keyWords});
-        tyMenu.setOnSubmit([=](endstone::Player *p,const string& response) {
+        tyMenu.setOnSubmit([=](const endstone::Player *p,const string& response) {
             json response_json = json::parse(response);
             const int r = response_json[0];
             const int time = response_json[1];

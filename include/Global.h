@@ -10,7 +10,6 @@
 #include "endstone/endstone.hpp"
 #include <nlohmann/json.hpp>
 #include <condition_variable>
-#include <thread>
 using namespace nlohmann;
 //日志缓存
 inline vector<TianyanCore::LogData> logDataCache;
