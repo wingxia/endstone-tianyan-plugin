@@ -28,6 +28,7 @@
 #include "Global.h"
 #include "EventListener.h"
 #include "Menu.h"
+#include <thread>
 
 class TianyanPlugin : public endstone::Plugin {
 public:
