@@ -71,7 +71,7 @@ endif()
 # 基础版本（主版本号）
 set(BASE_VERSION "1.2.0-alpha")
 
-# 组合成完整版本：1.2.0-alpha.4+567.gabc123
+# 组合成完整版本
 set(PROJECT_VERSION "${BASE_VERSION}.${GIT_COMMIT_COUNT}+${GIT_SHORT_HASH}")
 
 # 生成 version.h

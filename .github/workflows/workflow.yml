@@ -3,9 +3,6 @@ name: Build Endstone Tianyan
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: '版本号（例如 1.2.3，会自动加上 v 前缀）'
-        required: true
       publish_release:
         description: '是否发布 Release'
         required: true
@@ -50,7 +47,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: x86_64
+          arch: x64
 
       - name: Set up CMake and Ninja
         if: runner.os == 'Windows'
@@ -112,6 +109,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract version from CMakeLists.txt and Git
+        id: get_version
+        run: |
+          # 从 CMakeLists.txt 中提取基础版本号
+          BASE_VERSION=$(grep -o 'set(BASE_VERSION "[^"]*")' CMakeLists.txt | cut -d'"' -f2)
+          
+          # 获取 Git 提交计数（作为构建号）
+          GIT_COMMIT_COUNT=$(git rev-list --count HEAD)
+          GIT_SHORT_HASH=$(git rev-parse --short HEAD)
+          
+          # 组合成完整版本
+          PROJECT_VERSION="${BASE_VERSION}.${GIT_COMMIT_COUNT}+${GIT_SHORT_HASH}"
+          
+          echo "VERSION=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
+          echo "TAG_VERSION=v${BASE_VERSION}.${GIT_COMMIT_COUNT}" >> $GITHUB_OUTPUT
+
       - name: Download all plugin artifacts
         uses: actions/download-artifact@v4
         with:
@@ -121,7 +134,7 @@ jobs:
 
       - name: Prepare and Package All
         run: |
-          VERSION=${{ github.event.inputs.version }}
+          VERSION=${{ steps.get_version.outputs.VERSION }}
           OS_LIST=(linux windows)
           for OS in "${OS_LIST[@]}"; do
             if [[ "$OS" == "linux" ]]; then
@@ -135,7 +148,7 @@ jobs:
             mkdir -p ${BUILD_DIR}/tianyan_data/language
             cp "$PLUGIN_PATH" ${BUILD_DIR}/endstone_tianyan.${EXT}
             cp -r language/* ${BUILD_DIR}/tianyan_data/language/
-            ZIP_NAME=tianyan_v${VERSION}_${OS}.zip
+            ZIP_NAME=tianyan_${VERSION}_${OS}.zip
             cd ${BUILD_DIR}
             zip -r ../${ZIP_NAME} endstone_tianyan.${EXT} tianyan_data
             cd ..
@@ -146,8 +159,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.event.inputs.version }}
-          name: endstone tianyan v${{ github.event.inputs.version }}
+          tag_name: ${{ steps.get_version.outputs.TAG_VERSION }}
+          name: endstone tianyan ${{ steps.get_version.outputs.VERSION }}
           draft: false
           prerelease: false
           files: artifacts/*.zip
