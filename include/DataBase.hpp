@@ -607,15 +607,51 @@ public:
         // 计算时间范围（秒），支持小数小时（如0.5表示半小时）
         const long long timeThreshold = currentTime - static_cast<long long>(searchCriteria.second * 3600);
         
-        // 构建SQL查询语句，搜索关键词匹配任意字段并在时间范围内
-        const std::string sql = "SELECT * FROM LOGDATA WHERE (name LIKE '%" + searchCriteria.first +
-                         "%' OR type LIKE '%" + searchCriteria.first + 
-                         "%' OR data LIKE '%" + searchCriteria.first + 
-                         "%') AND time >= " + std::to_string(timeThreshold) + 
-                         " LIMIT 5001;";
-
-        // 调用 querySQL_many 函数执行查询，并将结果存储到 result 中
-        return querySQL_many(sql, result);
+        // 使用参数化查询防止SQL注入
+        const std::string sql = "SELECT * FROM LOGDATA WHERE (name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? LIMIT 5001;";
+        
+        sqlite3* db;
+        int rc = sqlite3_open(db_filename.c_str(), &db);
+        if (rc) {
+            std::cerr << "无法打开数据库: " << sqlite3_errmsg(db) << std::endl;
+            return rc;
+        }
+        
+        sqlite3_stmt* stmt;
+        rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            return rc;
+        }
+        
+        // 构造搜索关键词（添加通配符）
+        const std::string searchPattern = "%" + searchCriteria.first + "%";
+        
+        // 绑定参数
+        sqlite3_bind_text(stmt, 1, searchPattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, searchPattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, searchPattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 4, timeThreshold);
+        
+        // 执行查询并处理结果
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            std::map<std::string, std::string> row;
+            for (int i = 0; i < sqlite3_column_count(stmt); i++) {
+                const char* colName = sqlite3_column_name(stmt, i);
+                const auto colValue = reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
+                row[colName] = colValue ? colValue : "NULL";
+            }
+            result.push_back(row);
+        }
+        
+        if (rc != SQLITE_DONE) {
+            std::cerr << "SQL 查询失败: " << sqlite3_errmsg(db) << std::endl;
+        }
+        
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return rc == SQLITE_DONE ? SQLITE_OK : rc;
     }
 
     // 新增带坐标和世界过滤的搜索函数
@@ -629,21 +665,63 @@ public:
         // 计算时间范围（秒），支持小数小时（如0.5表示半小时）
         const long long timeThreshold = currentTime - static_cast<long long>(searchCriteria.second * 3600);
         
-        // 构建SQL查询语句，包含关键词匹配、时间范围以及坐标范围过滤
+        // 使用参数化查询防止SQL注入
         const std::string sql = "SELECT * FROM LOGDATA WHERE "
-                               "(name LIKE '%" + searchCriteria.first +
-                               "%' OR type LIKE '%" + searchCriteria.first + 
-                               "%' OR data LIKE '%" + searchCriteria.first + 
-                               "%') AND time >= " + std::to_string(timeThreshold) +
-                               " AND world = '" + world + "'" +
-                               " AND ((pos_x - " + std::to_string(x) + ")*(pos_x - " + std::to_string(x) + ")" +
-                               " + (pos_y - " + std::to_string(y) + ")*(pos_y - " + std::to_string(y) + ")" +
-                               " + (pos_z - " + std::to_string(z) + ")*(pos_z - " + std::to_string(z) + ")" +
-                               ") <= " + std::to_string(r*r) + 
-                               " LIMIT 5001;";
+                               "(name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? "
+                               "AND world = ? "
+                               "AND ((pos_x - ?)*(pos_x - ?) + (pos_y - ?)*(pos_y - ?) + (pos_z - ?)*(pos_z - ?)) <= ? "
+                               "LIMIT 5001;";
                                
-        // 调用 querySQL_many 函数执行查询，并将结果存储到 result 中
-        return querySQL_many(sql, result);
+        sqlite3* db;
+        int rc = sqlite3_open(db_filename.c_str(), &db);
+        if (rc) {
+            std::cerr << "无法打开数据库: " << sqlite3_errmsg(db) << std::endl;
+            return rc;
+        }
+        
+        sqlite3_stmt* stmt;
+        rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            return rc;
+        }
+        
+        // 构造搜索关键词（添加通配符）
+        const std::string searchPattern = "%" + searchCriteria.first + "%";
+        
+        // 绑定参数
+        sqlite3_bind_text(stmt, 1, searchPattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, searchPattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, searchPattern.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int64(stmt, 4, timeThreshold);
+        sqlite3_bind_text(stmt, 5, world.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_double(stmt, 6, x);
+        sqlite3_bind_double(stmt, 7, x);
+        sqlite3_bind_double(stmt, 8, y);
+        sqlite3_bind_double(stmt, 9, y);
+        sqlite3_bind_double(stmt, 10, z);
+        sqlite3_bind_double(stmt, 11, z);
+        sqlite3_bind_double(stmt, 12, r*r);
+        
+        // 执行查询并处理结果
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            std::map<std::string, std::string> row;
+            for (int i = 0; i < sqlite3_column_count(stmt); i++) {
+                const char* colName = sqlite3_column_name(stmt, i);
+                const auto colValue = reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
+                row[colName] = colValue ? colValue : "NULL";
+            }
+            result.push_back(row);
+        }
+        
+        if (rc != SQLITE_DONE) {
+            std::cerr << "SQL 查询失败: " << sqlite3_errmsg(db) << std::endl;
+        }
+        
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return rc == SQLITE_DONE ? SQLITE_OK : rc;
     }
 
     //数据库工具
@@ -655,7 +733,7 @@ public:
         bool inBraces = false;           // 标记是否在 {} 内部
         bool inBrackets = false;         // 标记是否在 [] 内部
 
-        for (char ch : input) {
+        for (const char ch : input) {
             if (ch == '{') {
                 // 遇到左大括号，标记进入 {} 内部
                 inBraces = true;

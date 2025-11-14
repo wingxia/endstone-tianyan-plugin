@@ -112,8 +112,11 @@ public:
             getLogger().info("No data path,auto create");
             filesystem::create_directory(dataPath);
         }
+        //获取服务器语言
+        const string sever_lang = getServer().getLanguage().getLocale();
+        Tran = translate(dataPath + "/language/"+sever_lang+".json");
         //加载语言
-        const auto [fst, snd] = Tran.loadLanguage(language_file);
+        const auto [fst, snd] = Tran.loadLanguage();
         getLogger().info(snd);
 #ifdef __linux__
         namespace fs = std::filesystem;
@@ -171,6 +174,7 @@ public:
             getLogger().error(Tran.getLocal("Config file error!Use default config")+","+e.what());
         }
         Tran = translate(language_file);
+        Tran.loadLanguage();
         //定期写入
         auto_write_task = getServer().getScheduler().runTaskTimer(*this, [&]() {logsCacheWrite();},0,60);
         getServer().getScheduler().runTaskTimer(*this,[&](){checkDatabaseCleanStatus();},0,20);

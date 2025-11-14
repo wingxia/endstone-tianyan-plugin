@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <utility>
 using namespace std;
 
 class translate {
@@ -15,18 +16,17 @@ public:
     json languageResource; // 存储从 lang.json 加载的语言资源
 
     // 构造函数中加载语言资源文件
-    explicit translate(const string& lang);
+    explicit translate(string lang_file) : lang_file_(std::move(lang_file)) {};
 
     // 加载语言资源文件
-    pair<bool,string> loadLanguage(const string& lang) {
-        lang_file = lang;
+    pair<bool,string> loadLanguage() {
+        const string lang_file = lang_file_;
         if (std::ifstream f(lang_file); f.is_open()) {
             languageResource = json::parse(f);
             f.close();
             return {true,"language file is normal"};
-        } else {
-            return {false,"you can download language file from github to change tianyan plugin language"};
         }
+        return {false,"you can download language file from github to change tianyan plugin language"};
     }
 
     // 获取本地化字符串
@@ -43,11 +43,6 @@ public:
         return fmt::vformat(pattern, fmt::make_format_args(args...));
     }
 private:
-    string lang_file = "plugins/tianyan_data/language/en_US.json";
+    string lang_file_;
 };
-
-inline translate::translate(const string& lang) {
-    loadLanguage(lang);
-}
-
 #endif //TIANYAN_TRANSLATE_H
