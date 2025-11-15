@@ -115,5 +115,8 @@
   "Teleport to this area": "传送到该区域",
   "Print information to chat": "打印信息到聊天栏",
   "No entities detected currently": "当前没有检测到实体",
-  "Find the area with the highest entity density": "查找实体密度最高的区域"
+  "Find the area with the highest entity density": "查找实体密度最高的区域",
+  "Success: ": "成功: ",
+  "Failed: ": "失败: ",
+  "Background log loading completed. You may now resume your operation": "后台日志加载完成，现在可以继续操作"
 }

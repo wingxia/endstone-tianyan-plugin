@@ -663,9 +663,9 @@ public:
     // 新增带坐标和世界过滤的搜索函数
     int searchLog(std::vector<std::map<std::string, std::string>> &result,
                   const std::pair<std::string, double>& searchCriteria,
-                  const double x, const double y, const double z, const double r, const std::string& world) const {
+                  const double x, const double y, const double z, const double r, const std::string& world, bool if_max = false) const {
         auto& pool = ConnectionPool::getInstance(db_filename);
-        auto conn = pool.getConnection();
+        const auto conn = pool.getConnection();
         sqlite3* db = conn->get();
 
         // 获取当前时间戳（秒）
@@ -676,11 +676,19 @@ public:
         const long long timeThreshold = currentTime - static_cast<long long>(searchCriteria.second * 3600);
 
         // 使用参数化查询防止SQL注入
-        const std::string sql = "SELECT * FROM LOGDATA WHERE "
-                               "(name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? "
-                               "AND world = ? "
-                               "AND ((pos_x - ?)*(pos_x - ?) + (pos_y - ?)*(pos_y - ?) + (pos_z - ?)*(pos_z - ?)) <= ? "
-                               "LIMIT 25001;";
+        std::string sql;
+        if (if_max) {
+            sql = "SELECT * FROM LOGDATA WHERE "
+                  "(name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? "
+                  "AND world = ? "
+                  "AND ((pos_x - ?)*(pos_x - ?) + (pos_y - ?)*(pos_y - ?) + (pos_z - ?)*(pos_z - ?)) <= ?;";
+        } else {
+            sql = "SELECT * FROM LOGDATA WHERE "
+                       "(name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? "
+                       "AND world = ? "
+                       "AND ((pos_x - ?)*(pos_x - ?) + (pos_y - ?)*(pos_y - ?) + (pos_z - ?)*(pos_z - ?)) <= ? "
+                       "LIMIT 25001;";
+        }
 
         sqlite3_stmt* stmt;
         int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);

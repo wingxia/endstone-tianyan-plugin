@@ -177,7 +177,10 @@ public:
         Tran.loadLanguage();
         //定期写入
         auto_write_task = getServer().getScheduler().runTaskTimer(*this, [&]() {logsCacheWrite();},0,60);
+        //数据库清理后台检查
         getServer().getScheduler().runTaskTimer(*this,[&](){checkDatabaseCleanStatus();},0,20);
+        //tyback命令后台检查
+        getServer().getScheduler().runTaskTimer(*this,[&](){checkTybackSearchThread();},0,20);
         //完成外部类初始化
         protect_ = std::make_unique<TianyanProtect>(*this);
         eventListener_ = std::make_unique<EventListener>(*this);
@@ -332,6 +335,11 @@ public:
                     return false;
                 }
                 try {
+                    //玩家有后台tyback操作未完成阻止使用
+                    if (tyback_cache.player_name == sender.getName() && tyback_cache.status == false) {
+                        sender.sendErrorMessage(Tran.getLocal("A background operation is in progress. Please wait for it to complete"));
+                        return false;
+                    }
                     const double r = stod(args[0]);
                     if (r > 100) {
                         sender.sendErrorMessage(Tran.getLocal("The radius cannot be greater than 100"));
@@ -344,11 +352,27 @@ public:
                     const double x = sender.asPlayer()->getLocation().getX();
                     const double y = sender.asPlayer()->getLocation().getY();
                     const double z = sender.asPlayer()->getLocation().getZ();
-                    if (const auto searchData = tyCore.searchLog({"",time},x, y, z, r, world); searchData.empty()) {
+                    if (auto searchData = tyCore.searchLog({"",time},x, y, z, r, world); searchData.empty()) {
                         sender.sendErrorMessage(Tran.getLocal("No log found"));
                     } else {
+                        //数据过大，启动后台模式
+                        if (searchData.size() > 25000 && tyback_cache.status == false) {
+                            sender.sendMessage(Tran.getLocal("Too many logs. Loading in the background to avoid lag — please wait."));
+                            tyback_cache.player_name = sender.asPlayer()->getName();
+                            tyback_cache.time = time;tyback_cache.r = r;
+                            std::thread tyback_thread( [this,time, x, y, z, r, world]() {
+                                const auto searchData_ = tyCore.searchLog({"",time},x, y, z, r, world, true);
+                                tyback_cache.logDatas = searchData_;
+                                tyback_cache.status = true;
+                            });
+                            tyback_thread.detach();
+                            return true;
+                        }
+                        if (tyback_cache.status == true) {
+                            searchData = tyback_cache.logDatas;
+                        }
                         //回溯逻辑
-                        int success_times = 0;
+                        int success_times = 0;int failed_times = 0;
                         for (auto& logData : std::ranges::reverse_view(searchData)) {
                             //跳过取消掉和已回溯的事件
                             if (logData.status == "canceled" || logData.status == "reverted") {
@@ -380,12 +404,18 @@ public:
                             //破坏和爆炸方块的恢复
                             if (logData.type == "block_break" || logData.type == "block_break_bomb" || (logData.type == "actor_bomb" && logData.id == "minecraft:tnt")) {
                                 string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
-                                string command_str;
-                                command_str = "setblock " + pos + " " + logData.obj_id + logData.data;
-                                endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
-                                (void)getServer().dispatchCommand(wrapper_sender,command_str);
+                                std::ostringstream cmd;
+                                cmd << "setblock " << pos << " " << logData.obj_id << logData.data;
+                                endstone::CommandSenderWrapper wrapper_sender(sender,
+                                    [&success_times](const endstone::Message &message) {success_times++;},
+                                    [&failed_times](const endstone::Message &message) {failed_times++;}
+                                    );
                                 // 将已回溯的事件UUID和状态添加到缓存中
-                                revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                if (bool status = getServer().dispatchCommand(wrapper_sender,cmd.str())) {
+                                    revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                } else {
+                                    cerr << cmd.str() << endl;
+                                }
                             }
                             //对玩家右键方块的状态复原
                             else if (logData.type == "player_right_click_block") {
@@ -394,10 +424,13 @@ public:
                                     string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
                                     std::ostringstream cmd;
                                     cmd << "setblock " << pos << " " << logData.obj_id << hand_block[1];
-                                    endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
-                                    (void)getServer().dispatchCommand(wrapper_sender,cmd.str());
-                                    // 将已回溯的事件UUID和状态添加到缓存中
-                                    revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                    endstone::CommandSenderWrapper wrapper_sender(sender,
+                                    [&success_times](const endstone::Message &message) {success_times++;},
+                                    [&failed_times](const endstone::Message &message) {failed_times++;}
+                                    );
+                                    if (bool status = getServer().dispatchCommand(wrapper_sender,cmd.str())) {
+                                        revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                    }
                                 }
                             }
                             //放置方块的恢复
@@ -405,10 +438,13 @@ public:
                                 string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
                                 std::ostringstream cmd;
                                 cmd << "setblock " << pos << " minecraft:air";
-                                endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
-                                (void)getServer().dispatchCommand(wrapper_sender,cmd.str());
-                                // 将已回溯的事件UUID和状态添加到缓存中
-                                revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                endstone::CommandSenderWrapper wrapper_sender(sender,
+                                [&success_times](const endstone::Message &message) {success_times++;},
+                                [&failed_times](const endstone::Message &message) {failed_times++;}
+                                );
+                                if (bool status = getServer().dispatchCommand(wrapper_sender,cmd.str())) {
+                                    revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                }
                             }
                             //复活吧我的生物
                             else if (logData.type == "entity_die") {
@@ -419,23 +455,28 @@ public:
                                 }
                                 std::ostringstream cmd;
                                 cmd << "summon " << obj_id << " " << pos;
-                                endstone::CommandSenderWrapper wrapper_sender(sender, [&success_times](const endstone::Message &message) {success_times++;});
-                                (void)getServer().dispatchCommand(wrapper_sender,cmd.str());
-                                // 将已回溯的事件UUID和状态添加到缓存中
-                                revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                endstone::CommandSenderWrapper wrapper_sender(sender,
+                                [&success_times](const endstone::Message &message) {success_times++;},
+                                [&failed_times](const endstone::Message &message) {failed_times++;}
+                                );
+                                if (bool status = getServer().dispatchCommand(wrapper_sender,cmd.str())) {
+                                    revertStatusCache.emplace_back(logData.uuid, "reverted");
+                                }
                             }
                         }
                         // 执行批量更新回溯状态
                         updateRevertStatus();
+                        auto green = endstone::ColorFormat::Green;
                         if (success_times > 0) {
-                            sender.sendMessage(Tran.getLocal("Revert times: ")+std::to_string(success_times));
-                            //提示数据过大
-                            if (searchData.size() > 25000) {
-                                sender.sendErrorMessage(Tran.getLocal("Too many logs, please narrow the search range,display only 25,001 logs"));
-                            }
+                            sender.sendMessage(green + Tran.getLocal("Revert times: ")+std::to_string(success_times+failed_times));
+                            sender.sendMessage(green + Tran.getLocal("Success: ")+std::to_string(success_times));
+                            sender.sendMessage(green + Tran.getLocal("Failed: ")+std::to_string(failed_times));
                         } else {
-                            sender.sendMessage(Tran.getLocal("Nothing happened"));
+                            sender.sendMessage(green + Tran.getLocal("Nothing happened"));
+                            sender.sendMessage(green + Tran.getLocal("Failed: ")+std::to_string(failed_times));
                         }
+                        //清理后台缓存
+                        tyback_cache = {false};
                     }
                 } catch (const std::exception &e) {
                     //返回错误给玩家
@@ -635,20 +676,24 @@ public:
     }
 
         //缓存写入机制
-    void logsCacheWrite() const {
+        static void logsCacheWrite() {
         if (logDataCache.empty()) {
             return;
         }
-        //检查写入状态
-        if (tyCore.recordLogs(logDataCache)) {
-            getLogger().error(Tran.getLocal("Failed to write cached logs"));
-            if (logDataCache.size() > 100000) {
-                getLogger().error("Unable to write a large volume of logs; cached logs will be discarded");
+        //异步写入
+        std::thread logsCacheWrite_thread ([]() {
+            //检查写入状态
+            if (tyCore.recordLogs(logDataCache)) {
+                std::cerr << Tran.getLocal("Failed to write cached logs") << std::endl;
+                if (logDataCache.size() > 100000) {
+                    std::cerr << "Unable to write a large volume of logs; cached logs will be discarded" << endl;
+                    logDataCache.clear();
+                }
+            } else {
                 logDataCache.clear();
             }
-        } else {
-            logDataCache.clear();
-        }
+        });
+        logsCacheWrite_thread.detach();
     }
 
     //检查异步的数据库清理状态
@@ -690,23 +735,40 @@ public:
         clean_data_message.clear();
     }
 
+    //检查tyback后台
+    void checkTybackSearchThread() {
+        if (tyback_cache.status == false) {
+            return;
+        }
+        if (const auto player = getServer().getPlayer(tyback_cache.player_name)) {
+            player->sendMessage(endstone::ColorFormat::Green+Tran.getLocal("Background log loading completed. You may now resume your operation"));
+            std::ostringstream cmd;
+            cmd << "tyback " << tyback_cache.r << " " << tyback_cache.time;
+            (void)player->performCommand(cmd.str());
+        } else {
+            tyback_cache = {false};
+        }
+    }
+
     // 批量更新回溯状态
-    void updateRevertStatus() const {
+    static void updateRevertStatus() {
         if (revertStatusCache.empty()) {
             return;
         }
-
-        // 使用数据库的批量更新方法更新状态
-        if (!Database.updateStatusesByUUIDs(revertStatusCache)) {
-            getLogger().error("Update revert status failed");
-            if (revertStatusCache.size() > 100000) {
-                getLogger().error("Unable to write a large volume of logs; cached logs will be discarded");
+        //异步写入
+        std::thread updateRevertStatus_thread ([]() {
+            if (!Database.updateStatusesByUUIDs(revertStatusCache)) {
+                std::cerr << "Update revert status failed" << std::endl;
+                if (revertStatusCache.size() > 100000) {
+                    std::cerr << "Unable to write a large volume of logs; cached logs will be discarded" << endl;
+                    revertStatusCache.clear();
+                }
+            } else {
+                // 写入成功才清空缓存
                 revertStatusCache.clear();
             }
-        } else {
-            // 写入成功才清空缓存
-            revertStatusCache.clear();
-        }
+        });
+        updateRevertStatus_thread.detach();
     }
 
 private:
@@ -714,4 +776,11 @@ private:
     std::unique_ptr<EventListener> eventListener_;
     std::unique_ptr<Menu> menu_;
     string clean_data_sender_name;
+    struct TybackCache {
+        bool status = false;
+        string player_name;
+        vector<TianyanCore::LogData> logDatas;
+        double r,time;
+    };
+    TybackCache tyback_cache = {false};
 };

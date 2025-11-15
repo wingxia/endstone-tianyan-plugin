@@ -115,5 +115,8 @@
   "Teleport to this area": "Телепортироваться в эту область",
   "Print information to chat": "Вывести информацию в чат",
   "No entities detected currently": "В настоящее время сущности не обнаружены",
-  "Find the area with the highest entity density": "Найти область с максимальной плотностью сущностей"
+  "Find the area with the highest entity density": "Найти область с максимальной плотностью сущностей",
+  "Success: ": "Успешно: ",
+  "Failed: ": "Ошибка: ",
+  "Background log loading completed. You may now resume your operation": "Загрузка логов в фоновом режиме завершена. Теперь вы можете продолжить операцию."
 }

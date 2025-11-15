@@ -114,5 +114,8 @@
   "Entity Density Detection Result": "Entity Density Detection Result",
   "Teleport to this area": "Teleport to this area",
   "Print information to chat": "Print information to chat",
-  "No entities detected currently": "No entities detected currently"
+  "No entities detected currently": "No entities detected currently",
+  "Success: ": "Success: ",
+  "Failed: ": "Failed: ",
+  "Background log loading completed. You may now resume your operation": "Background log loading completed. You may now resume your operation"
 }
