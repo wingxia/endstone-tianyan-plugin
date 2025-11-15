@@ -48,7 +48,10 @@ public:
         const auto block_data = event.getBlock().getData();
         auto block_states = block_data->getBlockStates();
         logData.data = fmt::format("{}", block_states);
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onBlockPlace(const endstone::BlockPlaceEvent& event){
@@ -69,7 +72,10 @@ public:
         const auto block_data = event.getBlockPlacedState().getData();
         auto block_states = block_data->getBlockStates();
         logData.data = fmt::format("{}", block_states);
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onActorDamage(const endstone::ActorDamageEvent& event){
@@ -103,7 +109,10 @@ public:
         }
         auto damage = event.getDamage();
         logData.data = fmt::format("{}", damage);
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onPlayerRightClickBlock(const endstone::PlayerInteractEvent& event) {
@@ -136,7 +145,10 @@ public:
         const auto block_data = event.getBlock()->getData();
         auto block_states = block_data->getBlockStates();
         logData.data = fmt::format("{},{}", hand_item,block_states);
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onPlayerRightClickActor(const endstone::PlayerInteractActorEvent& event){
@@ -166,7 +178,10 @@ public:
             hand_item = "hand";
         }
         logData.data = fmt::format("{}", hand_item);
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onActorBomb(const endstone::ActorExplodeEvent& event) {
@@ -186,10 +201,16 @@ public:
         auto block_num = event.getBlockList().size();
         if (event.isCancelled()) {
             logData.status = "canceled";
-            logDataCache.push_back(logData);
+            {
+                std::lock_guard lock(cacheMutex);
+                logDataCache.push_back(logData);
+            }
         } else {
             logData.data = fmt::format("{}", block_num);
-            logDataCache.push_back(logData);
+            {
+                std::lock_guard lock(cacheMutex);
+                logDataCache.push_back(logData);
+            }
             for (const auto& block : event.getBlockList()) {
                 // 方块类型
                 TianyanCore::LogData bomb_data;
@@ -204,7 +225,10 @@ public:
                 bomb_data.time = std::time(nullptr);
                 bomb_data.type = "block_break_bomb";
                 bomb_data.data = fmt::format("{}", block->getData()->getBlockStates());
-                logDataCache.push_back(bomb_data);
+                {
+                    std::lock_guard lock(cacheMutex);
+                    logDataCache.push_back(bomb_data);
+                }
             }
         }
     }
@@ -240,7 +264,10 @@ public:
         logData.data = fmt::format("{},{}", direct, event.getBlock().getData()->getBlockStates());
 
 
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onPistonRetract(const endstone::BlockPistonRetractEvent&event) {
@@ -273,7 +300,10 @@ public:
         }
         logData.data = fmt::format("{},{}", direct, event.getBlock().getData()->getBlockStates());
 
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onActorDie(const endstone::ActorDeathEvent&event) {
@@ -291,7 +321,10 @@ public:
         logData.obj_name = event.getActor().getName();
         logData.time = std::time(nullptr);
         logData.type = "entity_die";
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     static void onPlayPickup(const endstone::PlayerPickupItemEvent&event) {
@@ -310,7 +343,10 @@ public:
         if (event.isCancelled()) {
             logData.status = "canceled";
         }
-        logDataCache.push_back(logData);
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
     }
 
     //玩家加入事件

@@ -118,5 +118,6 @@
   "Find the area with the highest entity density": "查找实体密度最高的区域",
   "Success: ": "成功: ",
   "Failed: ": "失败: ",
-  "Background log loading completed. You may now resume your operation": "后台日志加载完成，现在可以继续操作"
+  "Background log loading completed. You may now resume your operation": "后台日志加载完成，现在可以继续操作",
+  "Too many logs. Loading in the background to avoid lag — please wait": "日志过多，正在后台加载以避免延迟，请稍候"
 }

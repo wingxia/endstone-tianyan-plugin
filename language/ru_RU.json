@@ -118,5 +118,6 @@
   "Find the area with the highest entity density": "Найти область с максимальной плотностью сущностей",
   "Success: ": "Успешно: ",
   "Failed: ": "Ошибка: ",
-  "Background log loading completed. You may now resume your operation": "Загрузка логов в фоновом режиме завершена. Теперь вы можете продолжить операцию."
+  "Background log loading completed. You may now resume your operation": "Загрузка логов в фоновом режиме завершена. Теперь вы можете продолжить операцию.",
+  "Too many logs. Loading in the background to avoid lag — please wait": "Слишком много журналов. Загрузка в фоновом режиме для предотвращения лага — пожалуйста, подождите"
 }

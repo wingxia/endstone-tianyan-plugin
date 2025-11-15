@@ -21,7 +21,7 @@
 
 //数据库清理输出语句缓存
 inline std::vector<std::string> clean_data_message;
-inline int clean_data_status;//0:未开始 1:成功 -1:失败
+inline int clean_data_status;//0:未开始 1:成功 -1:失败 2:进行中
 
 class DatabaseConnection {
 public:
@@ -217,6 +217,8 @@ public:
 
     // 清理数据库中超过指定时间的数据
     [[nodiscard]] bool cleanDataBase(double hours) const {
+        // 设置清理数据状态为进行中
+        clean_data_status = 2;
         auto start_time = std::chrono::high_resolution_clock::now();
 
         auto& pool = ConnectionPool::getInstance(db_filename);

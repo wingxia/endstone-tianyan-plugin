@@ -117,5 +117,6 @@
   "No entities detected currently": "No entities detected currently",
   "Success: ": "Success: ",
   "Failed: ": "Failed: ",
-  "Background log loading completed. You may now resume your operation": "Background log loading completed. You may now resume your operation"
+  "Background log loading completed. You may now resume your operation": "Background log loading completed. You may now resume your operation",
+  "Too many logs. Loading in the background to avoid lag — please wait": "Too many logs. Loading in the background to avoid lag — please wait"
 }

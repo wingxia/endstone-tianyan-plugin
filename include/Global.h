@@ -20,6 +20,8 @@ inline translate Tran(language_file);
 //初始化其它实例
 inline DataBase Database(dbPath);
 inline TianyanCore tyCore(Database);
+//缓存锁
+inline std::mutex cacheMutex;
 
 //任务
 inline shared_ptr<endstone::Task> auto_write_task;
