@@ -4,6 +4,8 @@
 # Tianyan Plugin
 
 [![中文](https://img.shields.io/badge/Chinese-README_chsinese.md-blue)](README.md) 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+![Build Status](https://github.com/yuhangle/Endstone_TianyanPlugin/actions/workflows/workflow.yml/badge.svg)
 
 A player behavior logging and querying plugin for the [Endstone](https://github.com/EndstoneMC/endstone) plugin loader.
 
