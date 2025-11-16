@@ -5,7 +5,7 @@
 
 [![中文](https://img.shields.io/badge/Chinese-README_chsinese.md-blue)](README.md) 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-![Build Status](https://github.com/yuhangle/Endstone_TianyanPlugin/actions/workflows/workflow.yml/badge.svg)
+![Build Status](https://github.com/yuhangle/endstone-tianyan-plugin/actions/workflows/workflow.yml/badge.svg)
 
 A player behavior logging and querying plugin for the [Endstone](https://github.com/EndstoneMC/endstone) plugin loader.
 
@@ -202,7 +202,7 @@ Configure the development environment according to Endstone documentation:
 
 Clone the project code:
 ```shell
-git clone https://github.com/yuhangle/endstone_TianyanPlugin.git
+git clone https://github.com/yuhangle/endstone-tianyan-plugin.git
 ```
 
 Open the code directory with your preferred development tool. Taking CLion as an example, click build project in the build to build the plugin.

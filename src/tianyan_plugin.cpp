@@ -8,6 +8,9 @@
 ENDSTONE_PLUGIN("tianyan_plugin", TIANYAN_PLUGIN_VERSION, TianyanPlugin)
 {
     description = "A plugin for endstone to record behavior";
+    website = "https://github.com/yuhangle/endstone-tianyan-plugin";
+    authors = {"yuhangle"};
+
 
         command("ty")
             .description(Tran.getLocal("Check behavior logs at your current location"))

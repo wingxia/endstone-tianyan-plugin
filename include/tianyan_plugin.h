@@ -213,7 +213,7 @@ public:
         getLogger().info(endstone::ColorFormat::Yellow+LOGO);
         const auto p_version = getServer().getPluginManager().getPlugin("tianyan_plugin")->getDescription().getVersion();
         getLogger().info(endstone::ColorFormat::Yellow + Tran.getLocal("Tianyan Plugin Version: ") + p_version);
-        getLogger().info(endstone::ColorFormat::Yellow + Tran.getLocal("Repo: ")+"https://github.com/yuhangle/Endstone_TianyanPlugin");
+        getLogger().info(endstone::ColorFormat::Yellow + Tran.getLocal("Repo: ")+"https://github.com/yuhangle/endstone-tianyan-plugin");
         getLogger().info("You can change the plugin’s language by editing the config file. Choose a language from the language folder.");
     }
 

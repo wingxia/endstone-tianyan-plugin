@@ -164,6 +164,7 @@ jobs:
           
           echo "VERSION=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
           echo "TAG_VERSION=${TAG_VERSION}" >> $GITHUB_OUTPUT
+          echo "RELEASE_TITLE=${RELEASE_TITLE}" >> $GITHUB_OUTPUT
 
       - name: Download all plugin artifacts
         uses: actions/download-artifact@v4
@@ -200,7 +201,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.TAG_VERSION }}
-          name: endstone tianyan ${{ steps.get_version.outputs.VERSION }}
+          name: ${{ steps.get_version.outputs.RELEASE_TITLE }}
           draft: false
           prerelease: ${{ github.event.inputs.release_type == 'development' }}
           files: artifacts/*.zip

@@ -5,7 +5,7 @@
 
 [![English](https://img.shields.io/badge/English-README_eng.md-blue)](README_eng.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-![Build Status](https://github.com/yuhangle/Endstone_TianyanPlugin/actions/workflows/workflow.yml/badge.svg)
+![Build Status](https://github.com/yuhangle/endstone-tianyan-plugin/actions/workflows/workflow.yml/badge.svg)
 
 一款适用于 [Endstone](https://github.com/EndstoneMC/endstone) 插件加载器的玩家行为记录查询插件。
 
@@ -202,7 +202,7 @@
 
 克隆项目代码：
 ```shell
-git clone https://github.com/yuhangle/endstone_TianyanPlugin.git
+git clone https://github.com/yuhangle/endstone-tianyan-plugin.git
 ```
 
 使用你喜欢的开发工具打开代码目录，以 CLion 为例，在构建中点击构建项目，即可构建插件。
