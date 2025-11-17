@@ -36,7 +36,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(fmt)
 
-endstone_add_plugin(${PROJECT_NAME} src/tianyan_plugin.cpp src/TianyanCore.cpp)
+endstone_add_plugin(${PROJECT_NAME} src/tianyan_plugin.cpp src/tianyan_core.cpp)
 
 target_include_directories(${PROJECT_NAME}
         PRIVATE ${CMAKE_SOURCE_DIR}/include

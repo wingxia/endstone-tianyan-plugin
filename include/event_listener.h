@@ -6,7 +6,7 @@
 #ifndef TIANYAN_EVENTLISTENER_H
 #define TIANYAN_EVENTLISTENER_H
 #include <endstone/endstone.hpp>
-#include "Global.h"
+#include "global.h"
 class EventListener {
 public:
     explicit EventListener(endstone::Plugin& plugin) : plugin_(plugin) {}
@@ -32,7 +32,7 @@ public:
 
     static void onBlockBreak(const endstone::BlockBreakEvent& event){
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getPlayer().getType();
         logData.name = event.getPlayer().getName();
         logData.pos_x = event.getBlock().getX();
@@ -56,7 +56,7 @@ public:
 
     static void onBlockPlace(const endstone::BlockPlaceEvent& event){
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getPlayer().getType();
         logData.name = event.getPlayer().getName();
         logData.pos_x = event.getBlockPlacedState().getX();
@@ -84,7 +84,7 @@ public:
             return;
         }
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
 
         //实体造成伤害
         if (event.getDamageSource().getActor()) {
@@ -123,7 +123,7 @@ public:
         if (!canTriggerEvent(event.getPlayer().getName())) {
             return;
         }
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getPlayer().getType();
         logData.name = event.getPlayer().getName();
         logData.pos_x = event.getBlock()->getX();
@@ -157,7 +157,7 @@ public:
             return;
         }
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getPlayer().getType();
         logData.name = event.getPlayer().getName();
         logData.pos_x = event.getActor().getLocation().getX();
@@ -186,7 +186,7 @@ public:
 
     static void onActorBomb(const endstone::ActorExplodeEvent& event) {
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getActor().getType();
         logData.name = event.getActor().getName();
         logData.pos_x = event.getLocation().getX();
@@ -214,7 +214,7 @@ public:
             for (const auto& block : event.getBlockList()) {
                 // 方块类型
                 TianyanCore::LogData bomb_data;
-                bomb_data.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+                bomb_data.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
                 bomb_data.id = event.getActor().getType();
                 bomb_data.name = event.getActor().getName();
                 bomb_data.pos_x = block->getX();
@@ -235,7 +235,7 @@ public:
 
     static void onPistonExtend(const endstone::BlockPistonExtendEvent&event) {
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getBlock().getType();
         logData.pos_x = event.getBlock().getX();
         logData.pos_y = event.getBlock().getY();
@@ -272,7 +272,7 @@ public:
 
     static void onPistonRetract(const endstone::BlockPistonRetractEvent&event) {
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getBlock().getType();
         logData.pos_x = event.getBlock().getX();
         logData.pos_y = event.getBlock().getY();
@@ -312,7 +312,24 @@ public:
             return;
         }
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
+        logData.pos_x = event.getActor().getLocation().getX();
+        logData.pos_y = event.getActor().getLocation().getY();
+        logData.pos_z = event.getActor().getLocation().getZ();
+        logData.world = event.getActor().getLocation().getDimension()->getName();
+        logData.obj_id = event.getActor().getType();
+        logData.obj_name = event.getActor().getName();
+        logData.time = std::time(nullptr);
+        logData.type = "entity_die";
+        {
+            std::lock_guard lock(cacheMutex);
+            logDataCache.push_back(logData);
+        }
+    }
+
+    static void onPlayerDie(const endstone::PlayerDeathEvent&event) {
+        TianyanCore::LogData logData;
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.pos_x = event.getActor().getLocation().getX();
         logData.pos_y = event.getActor().getLocation().getY();
         logData.pos_z = event.getActor().getLocation().getZ();
@@ -329,7 +346,7 @@ public:
 
     static void onPlayPickup(const endstone::PlayerPickupItemEvent&event) {
         TianyanCore::LogData logData;
-        logData.uuid = DataBase::generate_uuid_v4(); // 生成UUID
+        logData.uuid = yuhangle::Database::generate_uuid_v4(); // 生成UUID
         logData.id = event.getPlayer().getType();
         logData.name = event.getPlayer().getName();
         logData.pos_x = event.getPlayer().getLocation().getX();

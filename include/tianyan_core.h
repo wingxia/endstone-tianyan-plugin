@@ -4,7 +4,7 @@
 
 #ifndef TIANYAN_TIANYANCORE_H
 #define TIANYAN_TIANYANCORE_H
-#include "DataBase.hpp"
+#include "database.hpp"
 #include <unordered_map>
 
 using namespace std;
@@ -30,7 +30,7 @@ inline vector<pair<string, string>> revertStatusCache;
 
 class TianyanCore {
 public:
-    explicit TianyanCore(DataBase database);
+    explicit TianyanCore(yuhangle::Database database);
 
     //记录数据结构
     struct LogData {
@@ -98,7 +98,7 @@ public:
     // 检查玩家在10秒内是否发送消息超过6条（即 ≥7 条）
     static bool checkPlayerSendCMD(const string& player_name);
 private:
-    DataBase Database;
+    yuhangle::Database Database;
 };
 
 

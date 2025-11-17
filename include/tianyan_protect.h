@@ -4,7 +4,7 @@
 
 #ifndef TIANYAN_TIANYANPROTECT_H
 #define TIANYAN_TIANYANPROTECT_H
-#include <Global.h>
+#include <global.h>
 
 class TianyanProtect {
 public:

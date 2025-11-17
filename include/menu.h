@@ -4,7 +4,7 @@
 
 #ifndef TIANYAN_COMMANDS_H
 #define TIANYAN_COMMANDS_H
-#include "Global.h"
+#include "global.h"
 
 
 class Menu{
@@ -77,8 +77,8 @@ public:
                 if (!logData.data.empty()){
                     //对手持物品交互进行处理
                     if (logData.type == "player_right_click_block") {
-                        auto hand_block = DataBase::splitString(logData.data);
-                        logFields.emplace_back(Tran.getLocal("Item in Hand"), hand_block[0]);
+                        auto hand_block = yuhangle::Database::splitString(logData.data);
+                        logFields.emplace_back(Tran.getLocal("Item in Hand"), Tran.getLocal(hand_block[0]));
                         if (hand_block[1] != "[]") {
                             logFields.emplace_back(Tran.getLocal("Data"), hand_block[1]);
                         }

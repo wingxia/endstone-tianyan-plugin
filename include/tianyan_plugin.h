@@ -8,26 +8,12 @@
 #include <filesystem>
 #include <fstream>
 #include "translate.h"
-#include "DataBase.hpp"
-#include "TianyanCore.h"
-#include <endstone/player.h>
-#include <endstone/server.h>
-#include <endstone/event/block/block_break_event.h>
-#include <endstone/event/block/block_place_event.h>
-#include <endstone/event/actor/actor_explode_event.h>
-#include <endstone/event/actor/actor_death_event.h>
-#include <endstone/event/player/player_interact_event.h>
-#include <endstone/event/player/player_interact_actor_event.h>
-#include <endstone/event/actor/actor_damage_event.h>
-#include <endstone/event/block/block_piston_extend_event.h>
-#include <endstone/event/block/block_piston_retract_event.h>
-#include <endstone/color_format.h>
-#include <endstone/event/player/player_pickup_item_event.h>
-#include <endstone/endstone.hpp>
-#include "TianyanProtect.h"
-#include "Global.h"
-#include "EventListener.h"
-#include "Menu.h"
+#include "database.hpp"
+#include "tianyan_core.h"
+#include "tianyan_protect.h"
+#include "global.h"
+#include "event_listener.h"
+#include "menu.h"
 #include <thread>
 
 class TianyanPlugin : public endstone::Plugin {
@@ -135,7 +121,7 @@ public:
             const std::string finalPathStr = fullPath.string();
 
             // 使用完整路径重新初始化Database
-            Database = DataBase(finalPathStr);
+            Database = yuhangle::Database(finalPathStr);
             tyCore = TianyanCore(Database);
         }
         catch (const fs::filesystem_error& e) {
@@ -199,6 +185,7 @@ public:
         registerEvent<endstone::BlockPistonRetractEvent>(EventListener::onPistonRetract);
         registerEvent<endstone::ActorDeathEvent>(EventListener::onActorDie);
         registerEvent<endstone::PlayerPickupItemEvent>(EventListener::onPlayPickup);
+        registerEvent<endstone::PlayerDeathEvent>(EventListener::onPlayerDie);
         registerEvent(&EventListener::onPlayerJoin, *eventListener_);
         registerEvent(&EventListener::onPlayerSendMSG, *eventListener_);
         registerEvent(&EventListener::onPlayerSendCMD, *eventListener_);
@@ -425,7 +412,7 @@ public:
                             //对玩家右键方块的状态复原
                             else if (logData.type == "player_right_click_block") {
                                 //右键方块存在状态
-                                if (auto hand_block = DataBase::splitString(logData.data); hand_block[1] != "[]") {
+                                if (auto hand_block = yuhangle::Database::splitString(logData.data); hand_block[1] != "[]") {
                                     string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
                                     std::ostringstream cmd;
                                     cmd << "setblock " << pos << " " << logData.obj_id << hand_block[1];
@@ -457,6 +444,10 @@ public:
                                 std::string obj_id = logData.obj_id;
                                 if (size_t vpos = obj_id.find("villager_v2"); vpos != std::string::npos) {
                                     obj_id.replace(vpos, 11, "villager");
+                                }
+                                // 人被杀，就会死
+                                if (obj_id == "minecraft:player") {
+                                    continue;
                                 }
                                 std::ostringstream cmd;
                                 cmd << "summon " << obj_id << " " << pos;
@@ -625,7 +616,7 @@ public:
                     sender.sendErrorMessage(Tran.getLocal("A background operation is in progress. Please wait for it to complete"));
                     return false;
                 }
-                int hours = DataBase::stringToInt(args[0]);
+                int hours = yuhangle::Database::stringToInt(args[0]);
                 clean_data_sender_name = sender.getName();
                 sender.sendMessage(endstone::ColorFormat::Yellow+Tran.tr(Tran.getLocal("Start cleaning logs older than {} hours"), args[0]));
                 std::thread clean_thread([hours]() {
@@ -652,7 +643,7 @@ public:
             if (!sender.asPlayer()) {
                 int size = 20;
                 if (!args.empty()) {
-                    size = DataBase::stringToInt(args[0]);
+                    size = yuhangle::Database::stringToInt(args[0]);
                 }
                 if (auto result = TianyanProtect::calculateEntityDensity(getServer(), size);result.dim.has_value()) {
                     std::string content = fmt::format(
@@ -676,7 +667,7 @@ public:
                 if (args.empty()) {
                     menu_->findHighDensityRegion(*sender.asPlayer());
                 } else {
-                    int size = DataBase::stringToInt(args[0]);
+                    int size = yuhangle::Database::stringToInt(args[0]);
                     menu_->findHighDensityRegion(*sender.asPlayer(), size);
                 }
             }
