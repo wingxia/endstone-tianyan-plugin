@@ -2,9 +2,9 @@
 // Created by yuhang on 2025/10/26.
 //
 
-#include "../include/TianyanCore.h"
-
-TianyanCore::TianyanCore(DataBase database) : Database(std::move(database)) {};
+#include "../include/tianyan_core.h"
+#include "database.hpp"
+TianyanCore::TianyanCore(yuhangle::Database database) : Database(std::move(database)) {};
 
 long long TianyanCore::stringToTimestamp(const std::string& timestampStr) {
     try {

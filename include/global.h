@@ -4,9 +4,9 @@
 
 #ifndef TIANYAN_GLOBAL_H
 #define TIANYAN_GLOBAL_H
-#include "DataBase.hpp"
-#include "TianyanCore.h"
-#include "translate.h"
+#include "database.hpp"
+#include "tianyan_core.h"
+#include "translate.hpp"
 #include <nlohmann/json.hpp>
 #include <condition_variable>
 using namespace nlohmann;
@@ -17,7 +17,7 @@ inline vector<TianyanCore::BanIDPlayer> BanIDPlayers;
 //语言
 inline translate Tran;
 //初始化其它实例
-inline DataBase Database(dbPath);
+inline yuhangle::Database Database(dbPath);
 inline TianyanCore tyCore(Database);
 //缓存锁
 inline std::mutex cacheMutex;

@@ -14,7 +14,7 @@ include(FetchContent)
 FetchContent_Declare(
         endstone
         GIT_REPOSITORY https://github.com/EndstoneMC/endstone.git
-        GIT_TAG v0.10.10
+        GIT_TAG v0.10.17
 )
 FetchContent_MakeAvailable(endstone)
 
@@ -36,7 +36,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(fmt)
 
-endstone_add_plugin(${PROJECT_NAME} src/tianyan_plugin.cpp src/TianyanCore.cpp)
+file(GLOB PLUGIN_SOURCES
+        CONFIGURE_DEPENDS
+        "src/*.cpp"
+)
+
+endstone_add_plugin(${PROJECT_NAME} ${PLUGIN_SOURCES})
 
 target_include_directories(${PROJECT_NAME}
         PRIVATE ${CMAKE_SOURCE_DIR}/include
