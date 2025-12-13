@@ -34,6 +34,7 @@ namespace yuhangle {
         }
 
         bool open() {
+            if (!std::filesystem::exists(db_filename)) {return false;}
             if (sqlite3_open(db_filename.c_str(), &db)) {
                 std::cerr << "无法打开数据库: " << sqlite3_errmsg(db) << std::endl;
                 return false;
@@ -54,10 +55,10 @@ namespace yuhangle {
             static std::map<std::string, std::shared_ptr<ConnectionPool>> instances;
             static std::mutex instances_mutex;
 
-            std::lock_guard<std::mutex> lock(instances_mutex);
-            auto it = instances.find(db_filename);
+            std::lock_guard lock(instances_mutex);
+            const auto it = instances.find(db_filename);
             if (it == instances.end()) {
-                auto pool = std::make_shared<ConnectionPool>(db_filename);
+                const auto pool = std::make_shared<ConnectionPool>(db_filename);
                 instances[db_filename] = pool;
                 return *pool;
             }
@@ -70,7 +71,7 @@ namespace yuhangle {
         }
 
         std::shared_ptr<DatabaseConnection> getConnection() {
-            std::unique_lock<std::mutex> lock(pool_mutex);
+            std::unique_lock lock(pool_mutex);
 
             // 如果连接池为空且未达到最大大小，创建新连接
             if (connections.empty() && current_size < pool_size) {
@@ -89,7 +90,7 @@ namespace yuhangle {
         }
 
         void returnConnection(const std::shared_ptr<DatabaseConnection>& conn) {
-            std::lock_guard<std::mutex> lock(pool_mutex);
+            std::lock_guard lock(pool_mutex);
             connections.push(conn);
             condition.notify_one();
         }
@@ -129,7 +130,7 @@ namespace yuhangle {
 
         // 函数用于检查文件是否存在
         static bool fileExists(const std::string& filename) {
-            std::ifstream f(filename.c_str());
+            const std::ifstream f(filename.c_str());
             return f.good();
         }
 
@@ -346,10 +347,10 @@ namespace yuhangle {
                          const std::string &conditionColumn,
                          const std::string &conditionValue) const {
             auto& pool = ConnectionPool::getInstance(db_filename);
-            auto conn = pool.getConnection();
+            const auto conn = pool.getConnection();
             sqlite3* db = conn->get();
 
-            std::string sql = "UPDATE " + tableName +
+            const std::string sql = "UPDATE " + tableName +
                       " SET " + targetColumn + " = ?" +
                       " WHERE " + conditionColumn + " = ?;";
 
@@ -381,7 +382,7 @@ namespace yuhangle {
         // 根据UUID更新指定记录的状态
         [[nodiscard]] bool updateStatusByUUID(const std::string &uuid, const std::string &newStatus) const {
             auto& pool = ConnectionPool::getInstance(db_filename);
-            auto conn = pool.getConnection();
+            const auto conn = pool.getConnection();
             sqlite3* db = conn->get();
 
             const std::string sql = "UPDATE LOGDATA SET status = ? WHERE uuid = ?;";

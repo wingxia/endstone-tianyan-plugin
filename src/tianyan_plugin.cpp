@@ -18,7 +18,6 @@ void TianyanPlugin::datafile_check() const {
     if (!(std::filesystem::exists(dataPath))) {
         getLogger().info(Tran.getLocal("No data path,auto create"));
         std::filesystem::create_directory(dataPath);
-        std::filesystem::create_directory(language_path);
         if (!(std::filesystem::exists(config_path))) {
             if (std::ofstream file(config_path); file.is_open()) {
                 file << df_config.dump(4);
@@ -59,6 +58,10 @@ void TianyanPlugin::datafile_check() const {
                 }
             }
         }
+    }
+    if (!std::filesystem::exists(language_path))
+    {
+        std::filesystem::create_directory(language_path);
     }
 }
 
@@ -135,7 +138,7 @@ void TianyanPlugin::onEnable()
             max_command_in_10s = json_msg["10s_command_max"];
             no_log_mobs = json_msg["no_log_mobs"];
             lang = json_msg["language"];
-            language_file = dataPath + "/language/"+lang+".json";
+            language_file = language_path +lang+".json";
         } else {
             getLogger().error(Tran.getLocal("Config file error!Use default config"));
             max_message_in_10s = 6;
