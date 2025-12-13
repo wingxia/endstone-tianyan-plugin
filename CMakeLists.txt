@@ -55,54 +55,53 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 find_package(Git QUIET)
 if(GIT_FOUND)
-    # 获取最近的 tag
+    # 尝试找最近的正式版本 tag
     execute_process(
-        COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0 HEAD
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        OUTPUT_VARIABLE LAST_TAG
-        ERROR_QUIET
-        OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0 --match "v[0-9]*.[0-9]*.[0-9]*" HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE LAST_STABLE_TAG
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
-    if(LAST_TAG)
-        # 计算自该 tag 以来的提交数
+    if(LAST_STABLE_TAG)
+        # 基于最近的正式版本计算开发版
         execute_process(
-            COMMAND ${GIT_EXECUTABLE} rev-list --count "${LAST_TAG}..HEAD"
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            OUTPUT_VARIABLE GIT_COMMIT_COUNT
-            OUTPUT_STRIP_TRAILING_WHITESPACE
+                COMMAND ${GIT_EXECUTABLE} rev-list --count "${LAST_STABLE_TAG}..HEAD"
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                OUTPUT_VARIABLE GIT_COMMIT_COUNT
+                OUTPUT_STRIP_TRAILING_WHITESPACE
         )
+        # 提取基础版本号
+        string(REGEX REPLACE "^v(.*)" "\\1" BASE_VERSION_FROM_TAG "${LAST_STABLE_TAG}")
+        set(BASE_VERSION "${BASE_VERSION_FROM_TAG}")
     else()
-        # 没有 tag，回退到总提交数
+        set(BASE_VERSION "1.2.0")
         execute_process(
-            COMMAND ${GIT_EXECUTABLE} rev-list --count HEAD
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            OUTPUT_VARIABLE GIT_COMMIT_COUNT
-            OUTPUT_STRIP_TRAILING_WHITESPACE
+                COMMAND ${GIT_EXECUTABLE} rev-list --count HEAD
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                OUTPUT_VARIABLE GIT_COMMIT_COUNT
+                OUTPUT_STRIP_TRAILING_WHITESPACE
         )
     endif()
 
     # 获取短哈希
     execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        OUTPUT_VARIABLE GIT_SHORT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE GIT_SHORT_HASH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 else()
+    set(BASE_VERSION "1.2.0")
     set(GIT_COMMIT_COUNT "0")
     set(GIT_SHORT_HASH "unknown")
 endif()
 
-# 基础版本（主版本号）
-set(BASE_VERSION "1.2.0")
-
-# 检查是否为正式发布版本
+# 决定最终版本号
 if(RELEASE_VERSION)
-    # 正式发布版本
     set(PROJECT_VERSION "${BASE_VERSION}")
 else()
-    # 开发版本
     set(PROJECT_VERSION "${BASE_VERSION}-alpha.${GIT_COMMIT_COUNT}+${GIT_SHORT_HASH}")
 endif()
 
