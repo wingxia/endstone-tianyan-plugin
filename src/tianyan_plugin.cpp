@@ -401,6 +401,15 @@ bool TianyanPlugin::onCommand(endstone::CommandSender &sender, const endstone::C
                         else if (logData.type == "player_right_click_block") {
                             //右键方块存在状态
                             if (auto hand_block = yuhangle::Database::splitString(logData.data); hand_block[1] != "[]") {
+                                // 跳过无法获取内部数据方块的操作
+                                if (logData.obj_id.find("chest") != string::npos ||
+                                    logData.obj_id.find("sign") != string::npos ||
+                                    logData.obj_id.find("command") != string::npos ||
+                                    logData.obj_id.find("shulker_box") != string::npos ||
+                                    logData.obj_id.find("barrel") != string::npos)
+                                {
+                                    continue;
+                                }
                                 string pos = std::to_string(logData.pos_x) + " " + std::to_string(logData.pos_y) + " " + std::to_string(logData.pos_z);
                                 std::ostringstream cmd;
                                 cmd << "setblock " << pos << " " << logData.obj_id << hand_block[1];
