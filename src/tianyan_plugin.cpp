@@ -10,6 +10,7 @@
 void TianyanPlugin::datafile_check() const {
     json df_config = {
         {"language","zh_CN"},
+        {"enable_web_ui",false},
         {"10s_message_max", 6},
         {"10s_command_max", 12},
         {"no_log_mobs", {"minecraft:zombie_pigman","minecraft:zombie","minecraft:skeleton","minecraft:bogged","minecraft:slime"}}
@@ -81,6 +82,60 @@ void TianyanPlugin::datafile_check() const {
     }
 }
 
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <csignal>
+#endif
+
+namespace fs = std::filesystem;
+static pid_t g_web_pid = 0; // 全局变量记录
+
+void start_web_server(const std::string& pluginDir) {
+    const fs::path base_path = fs::absolute(pluginDir).parent_path(); // 插件根目录
+    const fs::path py_script = base_path / "WebUI" / "server.py";
+
+    const std::string cmd = "python3 " + py_script.string();
+
+    //std::cout << "[Tianyan] Attempting to start WebUI with: " << cmd << std::endl;
+
+#ifdef _WIN32
+    STARTUPINFO si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    if (CreateProcessA(NULL, (char*)cmd.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+#else
+    g_web_pid = fork();
+    if (g_web_pid == 0) {
+        // 子进程：脱离控制台会话
+        setsid();
+        execlp("python3", "python3", py_script.c_str(), NULL);
+        _exit(1);
+    }
+#endif
+}
+
+void stop_web_server() {
+#ifndef _WIN32
+    if (g_web_pid > 0) {
+        // 发送 SIGTERM 信号给子进程
+        if (kill(g_web_pid, SIGTERM) == 0) {
+            cout << "[Tianyan] Web server (PID: " << g_web_pid << ") terminated." << endl;
+        } else {
+            // 如果 Terminate 失败，尝试强制杀掉
+            kill(g_web_pid, SIGKILL);
+        }
+        g_web_pid = 0;
+    }
+#else
+    system("taskkill /F /IM python.exe /T");
+#endif
+}
+
 void TianyanPlugin::onLoad()
 {
     getLogger().info("onLoad is called");
@@ -139,6 +194,7 @@ void TianyanPlugin::onEnable()
             no_log_mobs = json_msg["no_log_mobs"];
             lang = json_msg["language"];
             language_file = language_path +lang+".json";
+            enable_web_ui = json_msg["enable_web_ui"];
         } else {
             getLogger().error(Tran.getLocal("Config file error!Use default config"));
             max_message_in_10s = 6;
@@ -193,12 +249,20 @@ _____   _
     getLogger().info(endstone::ColorFormat::Yellow + Tran.getLocal("Tianyan Plugin Version: ") + p_version);
     getLogger().info(endstone::ColorFormat::Yellow + Tran.getLocal("Repo: ")+"https://github.com/yuhangle/endstone-tianyan-plugin");
     getLogger().info("You can change the plugin’s language by editing the config file. Choose a language from the language folder.");
+    if (enable_web_ui)
+    {
+        start_web_server(dbPath);
+    }
 }
 
 void TianyanPlugin::onDisable()
 {
     getLogger().info("onDisable is called");
     logsCacheWrite();
+    if (enable_web_ui)
+    {
+        stop_web_server();
+    }
 }
 
 bool TianyanPlugin::onCommand(endstone::CommandSender &sender, const endstone::Command &command, const std::vector<std::string> &args)
