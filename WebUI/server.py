@@ -26,7 +26,7 @@ def install_dependencies():
             missing_packages.append(package)
 
     if not missing_packages:
-        print("All required dependencies are installed.")
+        # print("All required dependencies are installed.")
         return True
 
     print(f"Missing dependencies found: {missing_packages}")
@@ -80,13 +80,12 @@ def verify_dependencies():
     """验证所有必需依赖是否已安装"""
     required_packages = ['fastapi', 'uvicorn', 'pydantic']
 
-    print("Verifying dependencies...")
+    # print("Verifying dependencies...")
     missing_packages = []
 
     for package in required_packages:
         try:
             importlib.import_module(package)
-            print(f"✓ {package} installed")
         except ImportError as error:
             missing_packages.append(package)
             print(f"✗ {package} not installed: {error}")
@@ -102,7 +101,6 @@ def verify_dependencies():
             for package in required_packages:
                 try:
                     importlib.import_module(package)
-                    print(f"✓ {package} installed")
                 except ImportError:
                     final_missing.append(package)
 
@@ -118,7 +116,6 @@ def verify_dependencies():
             print("Please run: pip install " + " ".join(missing_packages))
             return False
     else:
-        print("All dependencies satisfied.")
         return True
 
 
@@ -153,7 +150,7 @@ except ImportError as e:
 
 # 获取当前脚本所在的绝对路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-print(f"Base directory: {BASE_DIR}")
+# print(f"Base directory: {BASE_DIR}")
 # 强制切换工作目录到 WebUI 文件夹
 os.chdir(BASE_DIR)
 
@@ -180,7 +177,7 @@ def load_config() -> dict:
     if not os.path.exists(CONFIG_PATH):
         logging.warning(f"Config file not found. Generating template at {CONFIG_PATH}")
         template = {
-            "secret": "your_secret",  # 提示用户修改
+            "secret": "your_secret",
             "backend_port": 8098
         }
         with open(CONFIG_PATH, 'w', encoding='utf-8') as cf:
@@ -224,7 +221,7 @@ def load_language(lang_code="en_US"):
 def setup_logging():
     """配置日志，输出到文件和控制台"""
     # 创建一个 logger
-    logger = logging.getLogger()
+    logger = logging.getLogger("tianyan_plugin")
 
     # 根据调试模式设置日志级别
     if DEBUG_MODE:
@@ -831,9 +828,7 @@ if __name__ == "__main__":
         print(f"Log file: {LOG_PATH}")
         print(f"Languages Path: {LANGUAGES_DIR}")
 
-    with open(CONFIG_PATH, 'r') as f:
-        conf = json.load(f)
-
+    conf = load_config()
     # 配置uvicorn运行参数
     config = {
         "host": "0.0.0.0",
@@ -844,5 +839,7 @@ if __name__ == "__main__":
     }
 
     logging.info(f"Start WebUI Service，127.0.0.1:{config['port']}")
+    if conf.get("secret", "your_secret") == "your_secret":
+        logging.warning("Using the default secret 'your_secret' — please update it for better security.")
 
     uvicorn.run(app, **config)
