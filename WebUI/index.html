@@ -101,6 +101,7 @@
                     </el-select>
                 </div>
             </template>
+            <el-input v-model="apiBase" :placeholder="t('Please enter backend IP and port')" style="margin-bottom: 15px;" @keyup.enter="login"></el-input>
             <el-input v-model="secret" :placeholder="t('Please enter WebUI Secret')" show-password @keyup.enter="login"></el-input>
             <el-button type="primary" style="width: 100%; margin-top: 20px" @click="login">{{ t('Enter Console') }}</el-button>
         </el-card>
@@ -355,6 +356,7 @@
         setup() {
             const isLoggedIn = ref(false);
             const secret = ref(localStorage.getItem('ty_secret') || '');
+            const apiBase = ref(localStorage.getItem('ty_api_base') || 'http://127.0.0.1:8098');
             const stats = reactive({ total_logs: 0, db_size: '0 MB' });
             const logs = ref([]);
             const loading = ref(false);
@@ -413,7 +415,9 @@
                 total_pages: 1
             });
 
-            const API_BASE = 'http://localhost:8098/api';
+            const API_BASE = computed(() => {
+                return `${apiBase.value}/api`;
+            });
 
             // 计算属性
             const hasActiveCoordQuery = computed(() => {
@@ -435,7 +439,7 @@
             // 加载可用语言
             const loadAvailableLanguages = async () => {
                 try {
-                    const res = await axios.get(`${API_BASE}/languages`);
+                    const res = await axios.get(`${API_BASE.value}/languages`);
                     const languages = res.data.languages || [];
 
                     availableLanguages.value = languages.map(code => ({
@@ -463,7 +467,7 @@
                     loading.value = true;
                     loadingProgress.value = t('Loading language...');
 
-                    const res = await axios.get(`${API_BASE}/language/${langCode}`);
+                    const res = await axios.get(`${API_BASE.value}/language/${langCode}`);
                     translations.value = res.data;
                     currentLanguage.value = langCode;
                     localStorage.setItem('ty_language', langCode);
@@ -505,7 +509,7 @@
                 try {
                     loading.value = true;
                     loadingProgress.value = t('Verifying...');
-                    const res = await axios.get(`${API_BASE}/stats`, {
+                    const res = await axios.get(`${API_BASE.value}/stats`, {
                         headers: {
                             'X-Secret': secret.value,
                             'X-Lang': currentLanguage.value
@@ -513,9 +517,13 @@
                     });
                     isLoggedIn.value = true;
                     localStorage.setItem('ty_secret', secret.value);
+                    localStorage.setItem('ty_api_base', apiBase.value);
                     Object.assign(stats, res.data);
                     ElementPlus.ElMessage.success(t('Login successful'));
 
+                    // 重新加载语言列表以确保新后端地址的语言支持得到更新
+                    await loadAvailableLanguages();
+                    
                     // 关键：登录成功后完全重置查询条件
                     resetSearch();
 
@@ -536,7 +544,7 @@
             const fetchStats = async () => {
                 statsLoading.value = true;
                 try {
-                    const res = await axios.get(`${API_BASE}/stats`, {
+                    const res = await axios.get(`${API_BASE.value}/stats`, {
                         headers: {
                             'X-Secret': secret.value,
                             'X-Lang': currentLanguage.value
@@ -605,7 +613,7 @@
                     loadingProgress.value = t('Querying data...');
 
                     const startTime = Date.now();
-                    const res = await axios.get(`${API_BASE}/logs`, {
+                    const res = await axios.get(`${API_BASE.value}/logs`, {
                         headers: {
                             'X-Secret': secret.value,
                             'X-Lang': currentLanguage.value
@@ -958,7 +966,7 @@
 
                     loadingProgress.value = t('Getting data from server...');
 
-                    const res = await axios.get(`${API_BASE}/export`, {
+                    const res = await axios.get(`${API_BASE.value}/export`, {
                         headers: {
                             'X-Secret': secret.value,
                             'X-Lang': currentLanguage.value
@@ -1051,7 +1059,7 @@
                 try {
                     loading.value = true;
                     loadingProgress.value = t('Getting database information...');
-                    const res = await axios.get(`${API_BASE}/db_info`, {
+                    const res = await axios.get(`${API_BASE.value}/db_info`, {
                         headers: {
                             'X-Secret': secret.value,
                             'X-Lang': currentLanguage.value
@@ -1154,7 +1162,7 @@
             });
 
             return {
-                isLoggedIn, secret, stats, logs, queryForm, tempCoord, pagination,
+                isLoggedIn, secret, apiBase, stats, logs, queryForm, tempCoord, pagination,
                 loading, tableLoading, loadingProgress, lastQueryTime, hasQueryResults,
                 exportDialogVisible, exportOption, exportStartPage, exportEndPage, exporting,
                 hasActiveCoordQuery, showDistanceColumn, isDebugMode,

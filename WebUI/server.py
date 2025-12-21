@@ -9,6 +9,7 @@ import sys
 import time
 from typing import List, Dict, Any
 
+logger = logging.getLogger("tianyan_plugin")
 
 # 自动安装依赖
 # noinspection PyUnusedImports
@@ -220,9 +221,7 @@ def load_language(lang_code="en_US"):
 # 配置日志系统
 def setup_logging():
     """配置日志，输出到文件和控制台"""
-    # 创建一个 logger
-    logger = logging.getLogger("tianyan_plugin")
-
+    global logger
     # 根据调试模式设置日志级别
     if DEBUG_MODE:
         logger.setLevel(logging.DEBUG)
@@ -838,8 +837,8 @@ if __name__ == "__main__":
         "log_level": "debug" if DEBUG_MODE else "warning"  # 设置日志级别
     }
 
-    logging.info(f"Start WebUI Service，127.0.0.1:{config['port']}")
+    logger.info(f"Start WebUI Service，127.0.0.1:{config['port']}")
     if conf.get("secret", "your_secret") == "your_secret":
-        logging.warning("Using the default secret 'your_secret' — please update it for better security.")
+        logger.warning("Using the default secret 'your_secret' — please update it for better security.")
 
     uvicorn.run(app, **config)
