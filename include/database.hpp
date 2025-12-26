@@ -18,7 +18,6 @@
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <filesystem>
 
 //数据库清理输出语句缓存
 inline std::vector<std::string> clean_data_message;
@@ -35,7 +34,6 @@ namespace yuhangle {
         }
 
         bool open() {
-            if (!std::filesystem::exists(db_filename)) {return false;}
             if (sqlite3_open(db_filename.c_str(), &db)) {
                 std::cerr << "无法打开数据库: " << sqlite3_errmsg(db) << std::endl;
                 return false;
