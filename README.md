@@ -1,7 +1,7 @@
 ![header](https://capsule-render.vercel.app/api?type=waving&height=300&color=gradient&text=Tianyan%20Plugin&animation=fadeIn&textBg=false&descAlignY=78&desc=Behavior%20logging%20for%20Endstone&section=footer&reversal=true)
 
 
-# Tianyan Plugin (天眼插件) 
+# 天眼插件 
 
 [![English](https://img.shields.io/badge/English-README_eng.md-blue)](README_eng.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
