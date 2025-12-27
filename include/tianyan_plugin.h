@@ -57,4 +57,8 @@ private:
         double r,time;
     };
     TybackCache tyback_cache = {false};
+    shared_ptr<endstone::Task> windows_print_webui_log;
+#ifdef _WIN32
+    void dump_webui_log_once() const;
+#endif
 };

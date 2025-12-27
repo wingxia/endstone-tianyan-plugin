@@ -215,6 +215,27 @@ void stop_web_server() {
     }
 #endif
 }
+#ifdef _WIN32
+void TianyanPlugin::dump_webui_log_once() const
+{
+    if (const string ready_file = dataPath + "/WebUI/ready"; !filesystem::exists(ready_file))
+    {
+        return;
+    }
+    const string log_path = dataPath + "/logs/webui.log";
+    std::ifstream file(log_path);
+    if (!file.is_open()) {
+        std::cerr << "[Tianyan] webui.log not found." << std::endl;
+        return;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::cout << line << std::endl;
+    }
+    getServer().getScheduler().cancelTask(windows_print_webui_log->getTaskId());
+}
+#endif
 
 void TianyanPlugin::onLoad()
 {
@@ -332,6 +353,9 @@ _____   _
     if (enable_web_ui)
     {
         start_web_server(dbPath);
+#ifdef _WIN32
+        windows_print_webui_log = getServer().getScheduler().runTaskTimer(*this, [&]() {dump_webui_log_once();},0,20);
+#endif
     }
 }
 
@@ -343,6 +367,7 @@ void TianyanPlugin::onDisable()
     {
         stop_web_server();
     }
+    getServer().getScheduler().cancelTasks(*this);
 }
 
 bool TianyanPlugin::onCommand(endstone::CommandSender &sender, const endstone::Command &command, const std::vector<std::string> &args)
