@@ -27,8 +27,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
-# SQLite3
-find_package(SQLite3 REQUIRED)
+# MySQL
+find_package(MySQL REQUIRED)
 
 # fmt (header-only or static)
 FetchContent_Declare(
@@ -51,9 +51,12 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
         nlohmann_json::nlohmann_json
-        SQLite::SQLite3
         fmt::fmt-header-only
 )
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${MYSQL_INCLUDE_DIRS})
+
+target_link_libraries(${PROJECT_NAME} PRIVATE ${MYSQL_LIBRARIES})
 
 find_package(Git QUIET)
 if(GIT_FOUND)

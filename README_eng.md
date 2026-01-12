@@ -197,8 +197,8 @@ Without parameters, a quick menu will pop up where players can query. The maximu
 
 Configure the development environment according to Endstone documentation:
 
-- Linux needs to install sqlite3 development library
-- Windows needs to use vcpkg or other package managers to install sqlite3 static development library
+- Linux needs to install MySQL development library
+- Windows needs to use vcpkg or other package managers to install MySQL static development library
 
 Clone the project code:
 ```shell

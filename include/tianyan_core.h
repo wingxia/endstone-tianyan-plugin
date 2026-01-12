@@ -12,7 +12,7 @@ using TimePoint = std::chrono::steady_clock::time_point;
 //文件目录
 inline string dataPath = "plugins/tianyan_data";
 inline string language_path = "plugins/tianyan_data/language/";
-inline string dbPath = "plugins/tianyan_data/ty_data.db";
+inline yuhangle::MySqlConfig dbConfig = {"127.0.0.1", "root", "password", "tianyan", 3306};
 inline string config_path = "plugins/tianyan_data/config.json";
 inline string ban_id_path = "plugins/tianyan_data/ban-id.json";
 //配置变量

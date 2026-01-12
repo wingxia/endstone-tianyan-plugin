@@ -12,7 +12,12 @@ void TianyanPlugin::datafile_check() const {
         {"language","zh_CN"},
         {"10s_message_max", 6},
         {"10s_command_max", 12},
-        {"no_log_mobs", {"minecraft:zombie_pigman","minecraft:zombie","minecraft:skeleton","minecraft:bogged","minecraft:slime"}}
+        {"no_log_mobs", {"minecraft:zombie_pigman","minecraft:zombie","minecraft:skeleton","minecraft:bogged","minecraft:slime"}},
+        {"mysql_host", "127.0.0.1"},
+        {"mysql_port", 3306},
+        {"mysql_user", "root"},
+        {"mysql_password", "password"},
+        {"mysql_database", "tianyan"}
     };
 
     if (!(std::filesystem::exists(dataPath))) {
@@ -96,38 +101,11 @@ void TianyanPlugin::onLoad()
     //加载语言
     const auto [fst, snd] = Tran.loadLanguage();
     getLogger().info(snd);
-#ifdef __linux__
-    namespace fs = std::filesystem;
-    try {
-        // 获取当前路径
-        const fs::path currentPath = fs::current_path();
-
-        // 子目录路径
-        const fs::path subdir = dbPath;
-
-        // 拼接路径
-        const fs::path fullPath = currentPath / subdir;
-
-        // 如果需要将最终路径转换为 string 类型
-        const std::string finalPathStr = fullPath.string();
-
-        // 使用完整路径重新初始化Database
-        Database = yuhangle::Database(finalPathStr);
-        tyCore = TianyanCore(Database);
-    }
-    catch (const fs::filesystem_error& e) {
-        std::cerr << "Filesystem error: " << e.what() << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "General error: " << e.what() << std::endl;
-    }
-#endif
 }
 
 void TianyanPlugin::onEnable()
 {
     getLogger().info("onEnable is called");
-    (void)Database.init_database();
     datafile_check();
     //进行一个配置文件的读取
     json json_msg = read_config();
@@ -139,6 +117,11 @@ void TianyanPlugin::onEnable()
             no_log_mobs = json_msg["no_log_mobs"];
             lang = json_msg["language"];
             language_file = language_path +lang+".json";
+            dbConfig.host = json_msg.value("mysql_host", dbConfig.host);
+            dbConfig.port = json_msg.value("mysql_port", dbConfig.port);
+            dbConfig.user = json_msg.value("mysql_user", dbConfig.user);
+            dbConfig.password = json_msg.value("mysql_password", dbConfig.password);
+            dbConfig.database = json_msg.value("mysql_database", dbConfig.database);
         } else {
             getLogger().error(Tran.getLocal("Config file error!Use default config"));
             max_message_in_10s = 6;
@@ -151,6 +134,9 @@ void TianyanPlugin::onEnable()
         no_log_mobs = {"minecraft:zombie_pigman","minecraft:zombie","minecraft:skeleton","minecraft:bogged","minecraft:slime"};
         getLogger().error(Tran.getLocal("Config file error!Use default config")+","+e.what());
     }
+    Database = yuhangle::Database(dbConfig);
+    tyCore = TianyanCore(Database);
+    (void)Database.init_database();
     Tran = translate(language_file);
     Tran.loadLanguage();
     translate::checkLanguageCommon(language_file,dataPath+"/language/lang.json");

@@ -197,8 +197,8 @@
 
 按照 Endstone 文档配置好开发环境：
 
-- Linux 需要安装 sqlite3 开发库
-- Windows 需要使用 vcpkg 或其它包管理工具 安装 sqlite3 静态开发库
+- Linux 需要安装 MySQL 开发库
+- Windows 需要使用 vcpkg 或其它包管理工具 安装 MySQL 静态开发库
 
 克隆项目代码：
 ```shell
