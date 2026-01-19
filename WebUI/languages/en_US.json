@@ -106,5 +106,16 @@
   "This event has been reverted": "This event has been reverted",
   "Log Browser": "Log Browser",
   "Revert Menu": "Revert Menu",
-  "Nothing happened": "Nothing happened"
+  "Nothing happened": "Nothing happened",
+  "Database Settings": "Database Settings",
+  "MySQL Host": "MySQL Host",
+  "MySQL Port": "MySQL Port",
+  "MySQL User": "MySQL User",
+  "MySQL Password": "MySQL Password",
+  "Database Name": "Database Name",
+  "Save": "Save",
+  "Saving...": "Saving...",
+  "Database settings saved": "Database settings saved",
+  "Failed to load database settings": "Failed to load database settings",
+  "Failed to save database settings": "Failed to save database settings"
 }

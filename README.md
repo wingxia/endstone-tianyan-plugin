@@ -55,18 +55,15 @@
 WebUI被启动后，会在插件数据目录下生成WebUI配置文件web_config.json:
 ```json
 {
-    "secret": "your_secret",
     "backend_port": 8098
 }
 ```
-- `secret`: WebUI 访问密钥，用于验证身份
 - `backend_port`: WebUI 端口
 
-运行WebUI需要以下pip包：`fastapi` `uvicorn`,WebUI在运行时会自动安装pip包。
+运行WebUI需要以下pip包：`fastapi` `uvicorn` `pydantic` `pymysql`，WebUI在运行时会自动安装pip包。
 
 你可以通过`服务器IP:WebUI端口`访问WebUI面板,例如，默认端口为8098，访问地址为`http://127.0.0.1:8098`。
-
-你也可以在WebUI指定连接后端IP和端口。
+WebUI无需密码认证，打开页面即可进入查询界面。
 
 ## 🚀 安装 & 配置 & 使用方法
 
@@ -91,12 +88,86 @@ WebUI被启动后，会在插件数据目录下生成WebUI配置文件web_config
     "10s_message_max": 6,
     "enable_web_ui": false,
     "language": "zh_CN",
+    "mysql": {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "user": "tianyan",
+        "password": "tianyan",
+        "database": "tianyan"
+    },
     "no_log_mobs": [
         "minecraft:zombie_pigman",
+        "minecraft:zombified_piglin",
         "minecraft:zombie",
+        "minecraft:zombie_villager",
+        "minecraft:husk",
+        "minecraft:drowned",
         "minecraft:skeleton",
+        "minecraft:stray",
+        "minecraft:wither_skeleton",
         "minecraft:bogged",
-        "minecraft:slime"
+        "minecraft:creeper",
+        "minecraft:spider",
+        "minecraft:cave_spider",
+        "minecraft:enderman",
+        "minecraft:witch",
+        "minecraft:slime",
+        "minecraft:magma_cube",
+        "minecraft:ghast",
+        "minecraft:blaze",
+        "minecraft:phantom",
+        "minecraft:guardian",
+        "minecraft:elder_guardian",
+        "minecraft:shulker",
+        "minecraft:silverfish",
+        "minecraft:endermite",
+        "minecraft:piglin",
+        "minecraft:piglin_brute",
+        "minecraft:hoglin",
+        "minecraft:zoglin",
+        "minecraft:ravager",
+        "minecraft:vindicator",
+        "minecraft:evoker",
+        "minecraft:pillager",
+        "minecraft:vex",
+        "minecraft:warden",
+        "minecraft:cow",
+        "minecraft:pig",
+        "minecraft:sheep",
+        "minecraft:chicken",
+        "minecraft:mooshroom",
+        "minecraft:horse",
+        "minecraft:donkey",
+        "minecraft:mule",
+        "minecraft:llama",
+        "minecraft:cat",
+        "minecraft:ocelot",
+        "minecraft:wolf",
+        "minecraft:fox",
+        "minecraft:rabbit",
+        "minecraft:goat",
+        "minecraft:panda",
+        "minecraft:polar_bear",
+        "minecraft:turtle",
+        "minecraft:bee",
+        "minecraft:bat",
+        "minecraft:squid",
+        "minecraft:glow_squid",
+        "minecraft:dolphin",
+        "minecraft:cod",
+        "minecraft:salmon",
+        "minecraft:pufferfish",
+        "minecraft:tropicalfish",
+        "minecraft:villager",
+        "minecraft:wandering_trader",
+        "minecraft:axolotl",
+        "minecraft:frog",
+        "minecraft:tadpole",
+        "minecraft:strider",
+        "minecraft:sniffer",
+        "minecraft:camel",
+        "minecraft:armadillo",
+        "minecraft:iron_golem"
     ]
 }
 ```
@@ -106,6 +177,7 @@ WebUI被启动后，会在插件数据目录下生成WebUI配置文件web_config
 - `10s_message_max`: 10秒内玩家可发送消息的最大次数
 - `enable_web_ui`: 是否启用 WebUI
 - `language`: 插件语言
+- `mysql`: MySQL 数据库配置（主机、端口、用户名、密码、数据库）
 - `no_log_mobs`: 不被记录的实体列表
 
 > 在涉及实体事件中，除非使用命名牌，否则不会记录 `no_log_mobs` 中的实体。
@@ -217,8 +289,8 @@ WebUI被启动后，会在插件数据目录下生成WebUI配置文件web_config
 
 按照 Endstone 文档配置好开发环境：
 
-- Linux 需要安装 sqlite3 开发库
-- Windows 需要使用 vcpkg 或其它包管理工具 安装 sqlite3 静态开发库
+- Linux 需要安装 libmysqlclient 开发库
+- Windows 需要使用 vcpkg 或其它包管理工具 安装 libmariadb 静态开发库
 
 克隆项目代码：
 ```shell

@@ -106,5 +106,16 @@
   "This event has been reverted": "Это событие было отменено",
   "Log Browser": "Браузер журналов",
   "Revert Menu": "Меню отмены",
-  "Nothing happened": "Ничего не произошло"
+  "Nothing happened": "Ничего не произошло",
+  "Database Settings": "Настройки базы данных",
+  "MySQL Host": "Хост MySQL",
+  "MySQL Port": "Порт MySQL",
+  "MySQL User": "Пользователь MySQL",
+  "MySQL Password": "Пароль MySQL",
+  "Database Name": "Имя базы данных",
+  "Save": "Сохранить",
+  "Saving...": "Сохранение...",
+  "Database settings saved": "Настройки базы данных сохранены",
+  "Failed to load database settings": "Не удалось загрузить настройки базы данных",
+  "Failed to save database settings": "Не удалось сохранить настройки базы данных"
 }
