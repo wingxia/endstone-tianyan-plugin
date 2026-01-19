@@ -15,6 +15,12 @@ inline string language_path = "plugins/tianyan_data/language/";
 inline string dbPath = "plugins/tianyan_data/ty_data.db";
 inline string config_path = "plugins/tianyan_data/config.json";
 inline string ban_id_path = "plugins/tianyan_data/ban-id.json";
+inline string mysql_host = "127.0.0.1";
+inline unsigned int mysql_port = 3306;
+inline string mysql_user = "tianyan";
+inline string mysql_password = "tianyan";
+inline string mysql_database = "tianyan";
+inline yuhangle::MysqlConfig mysql_config{mysql_host, mysql_user, mysql_password, mysql_database, mysql_port};
 //配置变量
 inline int max_message_in_10s;
 inline int max_command_in_10s;

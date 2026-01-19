@@ -27,8 +27,20 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
-# SQLite3
-find_package(SQLite3 REQUIRED)
+# MySQL/MariaDB client
+set(MYSQL_TARGET "")
+find_package(MariaDB CONFIG QUIET)
+if (TARGET MariaDB::MariaDB)
+    set(MYSQL_TARGET MariaDB::MariaDB)
+else()
+    find_package(MySQL CONFIG QUIET)
+    if (TARGET MySQL::MySQL)
+        set(MYSQL_TARGET MySQL::MySQL)
+    else()
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(MYSQL REQUIRED mysqlclient)
+    endif()
+endif()
 
 # fmt (header-only or static)
 FetchContent_Declare(
@@ -51,9 +63,17 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
         nlohmann_json::nlohmann_json
-        SQLite::SQLite3
+        ${MYSQL_TARGET}
         fmt::fmt-header-only
 )
+
+if (MYSQL_INCLUDE_DIRS)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${MYSQL_INCLUDE_DIRS})
+endif()
+
+if (MYSQL_LIBRARIES AND NOT MYSQL_TARGET)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${MYSQL_LIBRARIES})
+endif()
 
 find_package(Git QUIET)
 if(GIT_FOUND)
