@@ -106,5 +106,16 @@
   "This event has been reverted": "此事件已被还原",
   "Log Browser": "日志浏览器",
   "Revert Menu": "还原菜单",
-  "Nothing happened": "无事发生"
+  "Nothing happened": "无事发生",
+  "Database Settings": "数据库设置",
+  "MySQL Host": "MySQL 地址",
+  "MySQL Port": "MySQL 端口",
+  "MySQL User": "MySQL 用户名",
+  "MySQL Password": "MySQL 密码",
+  "Database Name": "数据库名称",
+  "Save": "保存",
+  "Saving...": "保存中...",
+  "Database settings saved": "数据库设置已保存",
+  "Failed to load database settings": "加载数据库设置失败",
+  "Failed to save database settings": "保存数据库设置失败"
 }

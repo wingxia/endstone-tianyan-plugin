@@ -3,7 +3,6 @@ import json
 import logging
 import math
 import os
-import sqlite3
 import subprocess
 import sys
 import time
@@ -17,7 +16,7 @@ def install_dependencies():
     """自动安装必要的Python依赖"""
 
     # 要检查的必需包列表
-    required_packages = ['fastapi', 'uvicorn', 'pydantic']
+    required_packages = ['fastapi', 'uvicorn', 'pydantic', 'pymysql']
 
     # 检查是否已安装
     missing_packages = []
@@ -79,7 +78,7 @@ def install_dependencies():
 
 def verify_dependencies():
     """验证所有必需依赖是否已安装"""
-    required_packages = ['fastapi', 'uvicorn', 'pydantic']
+    required_packages = ['fastapi', 'uvicorn', 'pydantic', 'pymysql']
 
     # print("Verifying dependencies...")
     missing_packages = []
@@ -143,10 +142,12 @@ try:
     from fastapi.staticfiles import StaticFiles
     # noinspection PyUnusedImports
     from fastapi.responses import FileResponse
+    # noinspection PyUnusedImports
+    import pymysql
 except ImportError as e:
     print(f"Failed to import third-party libraries: {e}")
     print("Please ensure all dependencies are installed:")
-    print("pip install fastapi uvicorn pydantic")
+    print("pip install fastapi uvicorn pydantic pymysql")
     sys.exit(1)
 
 # 获取当前脚本所在的绝对路径
@@ -156,8 +157,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 
 # 重新定位路径（相对于 WebUI 文件夹）
-DB_PATH = "../ty_data.db"
 CONFIG_PATH = "../web_config.json"
+PLUGIN_CONFIG_PATH = "../config.json"
 LOG_PATH = "../logs/webui.log"
 LANGUAGES_DIR = "languages"
 READY_FILE = "ready"
@@ -172,14 +173,12 @@ DEBUG_MODE = "--debug" in sys.argv
 def load_config() -> dict:
     """安全加载配置文件，带默认值和错误处理"""
     default_config = {
-        "secret": "",
         "backend_port": 8098,
         # 可根据需要添加其他默认项
     }
     if not os.path.exists(CONFIG_PATH):
         logging.warning(f"Config file not found. Generating template at {CONFIG_PATH}")
         template = {
-            "secret": "your_secret",
             "backend_port": 8098
         }
         with open(CONFIG_PATH, 'w', encoding='utf-8') as cf:
@@ -200,6 +199,65 @@ def load_config() -> dict:
     except Exception as error:
         logging.error(f"Failed to load config file {CONFIG_PATH}: {error}")
         raise RuntimeError(f"Cannot load configuration: {error}")
+
+
+def load_plugin_config() -> dict:
+    default_config = {
+        "mysql": {
+            "host": "127.0.0.1",
+            "port": 3306,
+            "user": "tianyan",
+            "password": "tianyan",
+            "database": "tianyan"
+        }
+    }
+    if not os.path.exists(PLUGIN_CONFIG_PATH):
+        logging.warning(f"Plugin config not found at {PLUGIN_CONFIG_PATH}")
+        return default_config
+
+    try:
+        with open(PLUGIN_CONFIG_PATH, 'r', encoding='utf-8') as cf:
+            the_config = json.load(cf)
+            needs_update = False
+            if "mysql" not in the_config or not isinstance(the_config["mysql"], dict):
+                the_config["mysql"] = default_config["mysql"]
+                needs_update = True
+            else:
+                for key, value in default_config["mysql"].items():
+                    if key not in the_config["mysql"]:
+                        the_config["mysql"][key] = value
+                        needs_update = True
+
+            if needs_update:
+                with open(PLUGIN_CONFIG_PATH, 'w', encoding='utf-8') as wf:
+                    json.dump(the_config, wf, indent=4, ensure_ascii=False)
+            return the_config
+    except json.JSONDecodeError as error:
+        logging.error(f"Invalid JSON in config file {PLUGIN_CONFIG_PATH}: {error}")
+        raise RuntimeError(f"Configuration file is not valid JSON: {error}")
+    except Exception as error:
+        logging.error(f"Failed to load config file {PLUGIN_CONFIG_PATH}: {error}")
+        raise RuntimeError(f"Cannot load configuration: {error}")
+
+
+def save_plugin_config(updated_mysql_config: dict):
+    config = load_plugin_config()
+    config["mysql"] = updated_mysql_config
+    with open(PLUGIN_CONFIG_PATH, 'w', encoding='utf-8') as cf:
+        json.dump(config, cf, indent=4, ensure_ascii=False)
+
+
+def get_db_connection():
+    config = load_plugin_config().get("mysql", {})
+    return pymysql.connect(
+        host=config.get("host", "127.0.0.1"),
+        user=config.get("user", "tianyan"),
+        password=config.get("password", "tianyan"),
+        database=config.get("database", "tianyan"),
+        port=int(config.get("port", 3306)),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True
+    )
 
 
 def load_language(lang_code="en_US"):
@@ -310,10 +368,29 @@ async def get_language(lang_code: str):
 
 # 辅助函数：获取文件大小
 def get_db_size():
-    if os.path.exists(DB_PATH):
-        size_bytes = os.path.getsize(DB_PATH)
-        return f"{size_bytes / (1024 * 1024):.2f} MB"
-    return "0 MB"
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            config = load_plugin_config().get("mysql", {})
+            db_name = config.get("database", "tianyan")
+            cursor.execute(
+                "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb "
+                "FROM information_schema.tables WHERE table_schema = %s",
+                (db_name,)
+            )
+            row = cursor.fetchone()
+            size_mb = row["size_mb"] if row and row["size_mb"] is not None else 0
+            return f\"{size_mb:.2f} MB\"
+    except Exception as error:
+        logging.error(f\"Failed to get database size: {error}\")
+        return \"0 MB\"
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # 数据模型
@@ -326,16 +403,32 @@ class LogsResponse(BaseModel):
     query_time_ms: float
 
 
-@app.get("/api/stats")
-async def get_stats(x_secret: str = Header(None)):
-    web_config = load_config()
-    if x_secret != web_config.get("secret"):
-        raise HTTPException(status_code=403, detail="Secret Invalid")
+class DbConfig(BaseModel):
+    host: str
+    port: int = 3306
+    user: str
+    password: str
+    database: str
 
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM LOGDATA")
-    total_count = cursor.fetchone()[0]
+
+@app.get("/api/db_config")
+async def get_db_config():
+    return load_plugin_config().get("mysql", {})
+
+
+@app.post("/api/db_config")
+async def update_db_config(config: DbConfig):
+    save_plugin_config(config.dict())
+    return {"success": True}
+
+
+@app.get("/api/stats")
+async def get_stats():
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) AS total FROM LOGDATA")
+        row = cursor.fetchone()
+        total_count = row["total"] if row else 0
     conn.close()
 
     return {
@@ -358,14 +451,9 @@ async def get_logs(
         center_z: float = Query(None, description="中心点Z坐标"),
         radius: float = Query(None, description="查询半径（格）"),
         dimension: str = Query(None, description="维度名称"),
-        x_secret: str = Header(None),
         x_lang: str = Header("en_US")
 ):
     start_time_query = time.time()  # 记录查询开始时间
-
-    web_config = load_config()
-    if x_secret != web_config.get("secret"):
-        raise HTTPException(status_code=403, detail="Secret Invalid")
 
     # 检查坐标查询参数
     has_coord_query = all([center_x is not None, center_y is not None, center_z is not None, radius is not None])
@@ -388,8 +476,7 @@ async def get_logs(
         logging.debug(f"  dimension={dimension}")
         logging.debug(f"  has_coord_query={has_coord_query}")
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection()
 
     try:
         cursor = conn.cursor()
@@ -401,13 +488,13 @@ async def get_logs(
 
         # 时间范围过滤
         if start_time:
-            count_query += " AND time >= ?"
-            data_query += " AND time >= ?"
+            count_query += " AND time >= %s"
+            data_query += " AND time >= %s"
             count_params.append(start_time)
             data_params.append(start_time)
         if end_time:
-            count_query += " AND time <= ?"
-            data_query += " AND time <= ?"
+            count_query += " AND time <= %s"
+            data_query += " AND time <= %s"
             count_params.append(end_time)
             data_params.append(end_time)
 
@@ -418,8 +505,8 @@ async def get_logs(
             if filter_type in allowed_fields:
                 # 关键修复：先确保字段不为NULL且不为空字符串，再进行LIKE匹配
                 # 这样可以避免NULL值导致的意外匹配
-                count_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE ?)"
-                data_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE ?)"
+                count_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE %s)"
+                data_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE %s)"
                 count_params.append(f"%{filter_value}%")
                 data_params.append(f"%{filter_value}%")
 
@@ -429,8 +516,8 @@ async def get_logs(
                 # 全部维度，不做过滤
                 pass
             else:
-                count_query += " AND world = ?"
-                data_query += " AND world = ?"
+                count_query += " AND world = %s"
+                data_query += " AND world = %s"
                 count_params.append(dimension)
                 data_params.append(dimension)
 
@@ -443,9 +530,9 @@ async def get_logs(
 
             # 使用欧几里得距离公式 (x-x0)² + (y-y0)² + (z-z0)² <= radius²
             distance_condition = f"""
-                AND ((pos_x - ?) * (pos_x - ?) + 
-                    (pos_y - ?) * (pos_y - ?) + 
-                    (pos_z - ?) * (pos_z - ?)) <= (? * ?)
+                AND ((pos_x - %s) * (pos_x - %s) + 
+                    (pos_y - %s) * (pos_y - %s) + 
+                    (pos_z - %s) * (pos_z - %s)) <= (%s * %s)
             """
             count_query += distance_condition
             data_query += distance_condition
@@ -470,7 +557,7 @@ async def get_logs(
         total_pages = (total_records + page_size - 1) // page_size  # 向上取整
 
         # 构建数据查询（带排序和分页）
-        data_query += " ORDER BY time DESC LIMIT ? OFFSET ?"
+        data_query += " ORDER BY time DESC LIMIT %s OFFSET %s"
         data_params.extend([page_size, offset])
 
         # 记录完整的SQL语句（调试模式）
@@ -516,7 +603,7 @@ async def get_logs(
             query_time_ms=round(query_time, 2)
         )
 
-    except sqlite3.Error as error:
+    except pymysql.MySQLError as error:
         current_data_query = locals().get('data_query', '未知查询')
         current_data_params = locals().get('data_params', [])
         logging.error(f"数据库查询错误: {str(error)}")
@@ -542,13 +629,8 @@ async def export_logs(
         center_z: float = Query(None, description="中心点Z坐标"),
         radius: float = Query(None, description="查询半径（格）"),
         dimension: str = Query(None, description="维度名称"),
-        x_secret: str = Header(None),
         x_lang: str = Header("en_US")
 ):
-    web_config = load_config()
-    if x_secret != web_config.get("secret"):
-        raise HTTPException(status_code=403, detail="Secret Invalid")
-
     if start_page > end_page:
         raise HTTPException(status_code=400, detail="开始页码不能大于结束页码")
 
@@ -564,8 +646,7 @@ async def export_logs(
         logging.debug(f"  center_x={center_x}, center_y={center_y}, center_z={center_z}, radius={radius}")
         logging.debug(f"  dimension={dimension}")
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection()
 
     try:
         cursor = conn.cursor()
@@ -576,10 +657,10 @@ async def export_logs(
 
         # 时间范围过滤
         if start_time:
-            count_query += " AND time >= ?"
+            count_query += " AND time >= %s"
             count_params.append(start_time)
         if end_time:
-            count_query += " AND time <= ?"
+            count_query += " AND time <= %s"
             count_params.append(end_time)
 
         # 字段过滤（关键修复：需要与get_logs函数保持一致）
@@ -587,12 +668,12 @@ async def export_logs(
             allowed_fields = ["id", "name", "type", "obj_id", "obj_name", "world", "status", "data"]
             if filter_type in allowed_fields:
                 # 关键修复：先确保字段不为NULL且不为空字符串，再进行LIKE匹配
-                count_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE ?)"
+                count_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE %s)"
                 count_params.append(f"%{filter_value}%")
 
         # 维度过滤 - 关键修复
         if dimension and dimension.lower() != "all" and dimension != "" and dimension is not None:
-            count_query += " AND world = ?"
+            count_query += " AND world = %s"
             count_params.append(dimension)
 
         # 坐标范围过滤
@@ -603,9 +684,9 @@ async def export_logs(
             count_query += valid_coord_condition
 
             distance_condition = f"""
-                AND ((pos_x - ?) * (pos_x - ?) + 
-                    (pos_y - ?) * (pos_y - ?) + 
-                    (pos_z - ?) * (pos_z - ?)) <= (? * ?)
+                AND ((pos_x - %s) * (pos_x - %s) + 
+                    (pos_y - %s) * (pos_y - %s) + 
+                    (pos_z - %s) * (pos_z - %s)) <= (%s * %s)
             """
             count_query += distance_condition
             params = [center_x, center_x, center_y, center_y, center_z, center_z, radius, radius]
@@ -643,10 +724,10 @@ async def export_logs(
 
             # 时间范围过滤
             if start_time:
-                data_query += " AND time >= ?"
+                data_query += " AND time >= %s"
                 data_params.append(start_time)
             if end_time:
-                data_query += " AND time <= ?"
+                data_query += " AND time <= %s"
                 data_params.append(end_time)
 
             # 字段过滤（关键修复：需要与计数查询保持一致）
@@ -654,26 +735,26 @@ async def export_logs(
                 allowed_fields = ["id", "name", "type", "obj_id", "obj_name", "world", "status", "data"]
                 if filter_type in allowed_fields:
                     # 关键修复：先确保字段不为NULL且不为空字符串，再进行LIKE匹配
-                    data_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE ?)"
+                    data_query += f" AND ({filter_type} IS NOT NULL AND {filter_type} != '' AND {filter_type} LIKE %s)"
                     data_params.append(f"%{filter_value}%")
 
             # 维度过滤 - 关键修复
             if dimension and dimension.lower() != "all" and dimension != "" and dimension is not None:
-                data_query += " AND world = ?"
+                data_query += " AND world = %s"
                 data_params.append(dimension)
 
             # 坐标范围过滤
             if has_coord_query:
                 distance_condition = f"""
-                    AND ((pos_x - ?) * (pos_x - ?) + 
-                         (pos_y - ?) * (pos_y - ?) + 
-                         (pos_z - ?) * (pos_z - ?)) <= (? * ?)
+                    AND ((pos_x - %s) * (pos_x - %s) + 
+                         (pos_y - %s) * (pos_y - %s) + 
+                         (pos_z - %s) * (pos_z - %s)) <= (%s * %s)
                 """
                 data_query += distance_condition
                 params = [center_x, center_x, center_y, center_y, center_z, center_z, radius, radius]
                 data_params.extend(params)
 
-            data_query += " ORDER BY time DESC LIMIT ? OFFSET ?"
+            data_query += " ORDER BY time DESC LIMIT %s OFFSET %s"
             data_params.extend([page_size, offset])
 
             # 记录每页的SQL（调试模式）
@@ -714,7 +795,7 @@ async def export_logs(
             "total_pages": total_pages
         }
 
-    except sqlite3.Error as error:
+    except pymysql.MySQLError as error:
         current_data_query = locals().get('data_query', '未知查询')
         current_data_params = locals().get('data_params', [])
         logging.error(f"导出数据错误: {str(error)}")
@@ -727,30 +808,42 @@ async def export_logs(
 
 # 新增：获取数据库索引状态和建议
 @app.get("/api/db_info")
-async def get_db_info(x_secret: str = Header(None)):
-    web_config = load_config()
-    if x_secret != web_config.get("secret"):
-        raise HTTPException(status_code=403, detail="Secret Invalid")
-
-    conn = sqlite3.connect(DB_PATH)
+async def get_db_info():
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        # 获取表信息
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [row[0] for row in cursor.fetchall()]
+        config = load_plugin_config().get("mysql", {})
+        db_name = config.get("database", "tianyan")
 
-        # 获取索引信息
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='LOGDATA'")
-        indexes = [row[0] for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = %s",
+            (db_name,)
+        )
+        tables = [row["table_name"] for row in cursor.fetchall()]
 
-        # 获取列信息
-        cursor.execute("PRAGMA table_info(LOGDATA)")
-        columns = [{"name": row[1], "type": row[2], "notnull": row[3], "pk": row[5]} for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT index_name FROM information_schema.statistics "
+            "WHERE table_schema = %s AND table_name = 'LOGDATA'",
+            (db_name,)
+        )
+        indexes = [row["index_name"] for row in cursor.fetchall()]
 
-        # 分析查询性能
-        cursor.execute("SELECT COUNT(*) FROM LOGDATA")
-        total_rows = cursor.fetchone()[0]
+        cursor.execute(
+            "SELECT column_name, data_type, is_nullable, column_key "
+            "FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = 'LOGDATA'",
+            (db_name,)
+        )
+        columns = [{
+            "name": row["column_name"],
+            "type": row["data_type"],
+            "notnull": 0 if row["is_nullable"] == "YES" else 1,
+            "pk": 1 if row["column_key"] == "PRI" else 0
+        } for row in cursor.fetchall()]
+
+        cursor.execute("SELECT COUNT(*) AS total FROM LOGDATA")
+        total_rows = cursor.fetchone()["total"]
 
         return {
             "tables": tables,
@@ -765,16 +858,11 @@ async def get_db_info(x_secret: str = Header(None)):
 # 用于调试
 @app.get("/api/debug/query")
 async def debug_query(
-        sql: str = Query(None, description="SQL查询语句"),
-        x_secret: str = Header(None)
+        sql: str = Query(None, description="SQL查询语句")
 ):
     """调试接口：直接执行SQL查询（仅调试模式可用）"""
     if not DEBUG_MODE:
         raise HTTPException(status_code=403, detail="此接口仅在调试模式下可用")
-
-    web_config = load_config()
-    if x_secret != web_config.get("secret"):
-        raise HTTPException(status_code=403, detail="Secret Invalid")
 
     if not sql or not sql.strip():
         raise HTTPException(status_code=400, detail="需要提供SQL查询语句")
@@ -783,8 +871,7 @@ async def debug_query(
     if not sql.strip().upper().startswith("SELECT"):
         raise HTTPException(status_code=400, detail="只允许SELECT查询")
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection()
 
     try:
         cursor = conn.cursor()
@@ -804,7 +891,7 @@ async def debug_query(
             "data": data[:100],  # 限制返回前100条
             "total": len(data)
         }
-    except sqlite3.Error as error:
+    except pymysql.MySQLError as error:
         logging.error(f"调试查询错误: {str(error)}")
         return {
             "success": False,
@@ -823,7 +910,6 @@ if __name__ == "__main__":
     # 检查是否以调试模式启动
     if DEBUG_MODE:
         print(f"Boot mode: DEBUG")
-        print(f"Database Path: {DB_PATH}")
         print(f"Config file: {CONFIG_PATH}")
         print(f"Log file: {LOG_PATH}")
         print(f"Languages Path: {LANGUAGES_DIR}")
@@ -839,8 +925,6 @@ if __name__ == "__main__":
     }
 
     logger.info(f"Start WebUI Service，127.0.0.1:{config['port']}")
-    if conf.get("secret", "your_secret") == "your_secret":
-        logger.warning("Using the default secret 'your_secret' — please update it for better security.")
     with open(READY_FILE, "w", encoding="utf-8"):
         pass
 

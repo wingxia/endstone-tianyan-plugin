@@ -5,73 +5,110 @@
 #ifndef TIANYAN_DATABASE_H
 #define TIANYAN_DATABASE_H
 
-#include <iostream>
-#include <sqlite3.h>
-#include <fstream>
-#include <string>
-#include <sstream>
-#include <utility>
-#include <vector>
-#include <map>
-#include <random>
 #include <chrono>
+#include <condition_variable>
+#include <fstream>
+#include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
+#ifdef _WIN32
+#include <mysql.h>
+#else
+#include <mysql/mysql.h>
+#endif
 #include <queue>
+#include <random>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 //数据库清理输出语句缓存
 inline std::vector<std::string> clean_data_message;
 inline int clean_data_status;//0:未开始 1:成功 -1:失败 2:进行中
+
 namespace yuhangle {
+    struct MysqlConfig {
+        std::string host;
+        std::string user;
+        std::string password;
+        std::string database;
+        unsigned int port;
+    };
+
     class DatabaseConnection {
     public:
-        explicit DatabaseConnection(std::string  db_filename) : db_filename(std::move(db_filename)), db(nullptr) {}
+        explicit DatabaseConnection(MysqlConfig config) : config(std::move(config)), db(nullptr) {}
 
         ~DatabaseConnection() {
             if (db) {
-                sqlite3_close(db);
+                mysql_close(db);
             }
         }
 
         bool open() {
-            if (sqlite3_open(db_filename.c_str(), &db)) {
+            db = mysql_init(nullptr);
+            if (!db) {
                 return false;
             }
+            mysql_options(db, MYSQL_SET_CHARSET_NAME, "utf8mb4");
+            if (!mysql_real_connect(db,
+                                    config.host.c_str(),
+                                    config.user.c_str(),
+                                    config.password.c_str(),
+                                    nullptr,
+                                    config.port,
+                                    nullptr,
+                                    0)) {
+                return false;
+            }
+
+            const std::string create_db = "CREATE DATABASE IF NOT EXISTS `" + config.database +
+                                           "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;";
+            if (mysql_real_query(db, create_db.c_str(), create_db.size()) != 0) {
+                return false;
+            }
+
+            if (mysql_select_db(db, config.database.c_str()) != 0) {
+                return false;
+            }
+
             return true;
         }
 
-        [[nodiscard]] sqlite3* get() const { return db; }
+        [[nodiscard]] MYSQL* get() const { return db; }
 
     private:
-        std::string db_filename;
-        sqlite3* db;
+        MysqlConfig config;
+        MYSQL* db;
     };
 
     class ConnectionPool {
     public:
-        static ConnectionPool& getInstance(const std::string& db_filename) {
+        static ConnectionPool& getInstance(const MysqlConfig& config) {
             static std::map<std::string, std::shared_ptr<ConnectionPool>> instances;
             static std::mutex instances_mutex;
 
             std::lock_guard lock(instances_mutex);
-            const auto it = instances.find(db_filename);
+            const std::string key = configKey(config);
+            const auto it = instances.find(key);
             if (it == instances.end()) {
-                const auto pool = std::make_shared<ConnectionPool>(db_filename);
-                instances[db_filename] = pool;
+                const auto pool = std::make_shared<ConnectionPool>(config);
+                instances[key] = pool;
                 return *pool;
             }
             return *(it->second);
         }
 
-        explicit ConnectionPool(std::string  db_filename, const size_t pool_size = 5)
-            : db_filename(std::move(db_filename)), pool_size(pool_size) {
+        explicit ConnectionPool(MysqlConfig config, const size_t pool_size = 5)
+            : config(std::move(config)), pool_size(pool_size) {
             initializePool();
         }
 
         std::shared_ptr<DatabaseConnection> getConnection() {
             std::unique_lock lock(pool_mutex);
 
-            // 如果连接池为空且未达到最大大小，创建新连接
             if (connections.empty() && current_size < pool_size) {
                 if (auto conn = createConnection()) {
                     current_size++;
@@ -79,7 +116,6 @@ namespace yuhangle {
                 }
             }
 
-            // 等待可用连接
             condition.wait(lock, [this]() { return !connections.empty(); });
 
             auto conn = connections.front();
@@ -94,6 +130,10 @@ namespace yuhangle {
         }
 
     private:
+        static std::string configKey(const MysqlConfig& config) {
+            return config.host + "|" + config.user + "|" + config.password + "|" + config.database + "|" + std::to_string(config.port);
+        }
+
         void initializePool() {
             for (size_t i = 0; i < pool_size; ++i) {
                 if (auto conn = createConnection()) {
@@ -104,13 +144,13 @@ namespace yuhangle {
         }
 
         std::shared_ptr<DatabaseConnection> createConnection() {
-            if (auto conn = std::make_shared<DatabaseConnection>(db_filename); conn->open()) {
+            if (auto conn = std::make_shared<DatabaseConnection>(config); conn->open()) {
                 return conn;
             }
             return nullptr;
         }
 
-        std::string db_filename;
+        MysqlConfig config;
         size_t pool_size;
         size_t current_size = 0;
         std::queue<std::shared_ptr<DatabaseConnection>> connections;
@@ -120,184 +160,176 @@ namespace yuhangle {
 
     class Database {
     public:
-        // 构造时需要指定数据库文件名
-        explicit Database(std::string db_filename) : db_filename(std::move(db_filename)) {
-            // 预初始化连接池
-            ConnectionPool::getInstance(this->db_filename);
+        explicit Database(MysqlConfig config) : config(std::move(config)) {
+            ConnectionPool::getInstance(this->config);
         }
 
-        // 函数用于检查文件是否存在
         static bool fileExists(const std::string& filename) {
             const std::ifstream f(filename.c_str());
             return f.good();
         }
 
-        // 初始化数据库
         [[nodiscard]] int init_database() const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
+            MYSQL* db = conn->get();
 
-            // 创建 LOGDATA 表，添加uuid字段作为主键
-            const std::string create_logdata_table = "CREATE TABLE IF NOT EXISTS LOGDATA ("
-                                            "uuid TEXT PRIMARY KEY, "
-                                            "id TEXT, "
-                                            "name TEXT, "
-                                            "pos_x REAL, pos_y REAL, pos_z REAL, "
-                                            "world TEXT, "
-                                            "obj_id TEXT, "
-                                            "obj_name TEXT, "
-                                            "time INTEGER, "
-                                            "type TEXT, "
-                                            "data TEXT, "
-                                            "status TEXT)";
-            if (const int rc = sqlite3_exec(conn->get(), create_logdata_table.c_str(), nullptr, nullptr, nullptr); rc != SQLITE_OK) {
-                std::cerr << "创建 logdata 表失败: " << sqlite3_errmsg(conn->get()) << std::endl;
-                return rc;
+            const std::string create_logdata_table =
+                "CREATE TABLE IF NOT EXISTS LOGDATA ("
+                "uuid VARCHAR(64) PRIMARY KEY, "
+                "id TEXT, "
+                "name TEXT, "
+                "pos_x DOUBLE, pos_y DOUBLE, pos_z DOUBLE, "
+                "world TEXT, "
+                "obj_id TEXT, "
+                "obj_name TEXT, "
+                "time BIGINT, "
+                "type TEXT, "
+                "data TEXT, "
+                "status TEXT)";
+
+            if (mysql_real_query(db, create_logdata_table.c_str(), create_logdata_table.size()) != 0) {
+                std::cerr << "创建 logdata 表失败: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
+                return mysql_errno(db);
             }
 
             pool.returnConnection(conn);
-            return SQLITE_OK;
-        }
-
-        ///////////////////// 通用操作 /////////////////////
-
-        // 通用执行 SQL 命令（用于添加、删除、修改操作）
-        [[nodiscard]] int executeSQL(const std::string &sql) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
-            const auto conn = pool.getConnection();
-
-            const int rc = sqlite3_exec(conn->get(), sql.c_str(), nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 执行失败: " << sqlite3_errmsg(conn->get()) << std::endl;
-            }
-
-            pool.returnConnection(conn);
-            return rc;
-        }
-
-        // 通用查询 SQL（select查询使用回调函数返回结果为 vector<map<string, string>>）
-        static int queryCallback(void* data, int argc, char** argv, char** azColName) {
-            auto* result = static_cast<std::vector<std::map<std::string, std::string>>*>(data);
-            std::map<std::string, std::string> row;
-            for (int i = 0; i < argc; i++) {
-                row[azColName[i]] = argv[i] ? argv[i] : "NULL";
-            }
-            result->push_back(row);
             return 0;
         }
 
-        int querySQL(const std::string &sql, std::vector<std::map<std::string, std::string>> &result) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+        [[nodiscard]] int executeSQL(const std::string &sql) const {
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
+            MYSQL* db = conn->get();
 
-            const int rc = sqlite3_exec(conn->get(), sql.c_str(), queryCallback, &result, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 查询失败: " << sqlite3_errmsg(conn->get()) << std::endl;
+            const int rc = mysql_real_query(db, sql.c_str(), sql.size());
+            if (rc != 0) {
+                std::cerr << "SQL 执行失败: " << mysql_error(db) << std::endl;
             }
 
             pool.returnConnection(conn);
             return rc;
+        }
+
+        static std::string escapeString(MYSQL* db, const std::string& input) {
+            std::string escaped;
+            escaped.resize(input.size() * 2 + 1);
+            const auto len = mysql_real_escape_string(db, escaped.data(), input.c_str(), input.size());
+            escaped.resize(len);
+            return escaped;
+        }
+
+        int querySQL(const std::string &sql, std::vector<std::map<std::string, std::string>> &result) const {
+            auto& pool = ConnectionPool::getInstance(config);
+            const auto conn = pool.getConnection();
+            MYSQL* db = conn->get();
+
+            const int rc = mysql_real_query(db, sql.c_str(), sql.size());
+            if (rc != 0) {
+                std::cerr << "SQL 查询失败: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
+                return rc;
+            }
+
+            MYSQL_RES* res = mysql_store_result(db);
+            if (!res) {
+                if (mysql_field_count(db) != 0) {
+                    std::cerr << "SQL 查询结果失败: " << mysql_error(db) << std::endl;
+                    pool.returnConnection(conn);
+                    return mysql_errno(db);
+                }
+                pool.returnConnection(conn);
+                return 0;
+            }
+
+            const int num_fields = mysql_num_fields(res);
+            MYSQL_FIELD* fields = mysql_fetch_fields(res);
+            MYSQL_ROW row;
+            while ((row = mysql_fetch_row(res))) {
+                unsigned long* lengths = mysql_fetch_lengths(res);
+                std::map<std::string, std::string> row_data;
+                for (int i = 0; i < num_fields; i++) {
+                    const char* col_name = fields[i].name;
+                    if (row[i]) {
+                        row_data[col_name] = std::string(row[i], lengths[i]);
+                    } else {
+                        row_data[col_name] = "NULL";
+                    }
+                }
+                result.push_back(std::move(row_data));
+            }
+
+            mysql_free_result(res);
+            pool.returnConnection(conn);
+            return 0;
         }
 
         [[nodiscard]] int updateSQL(const std::string &table, const std::string &set_clause, const std::string &where_clause) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
-            const auto conn = pool.getConnection();
-
             const std::string sql = "UPDATE " + table + " SET " + set_clause + " WHERE " + where_clause + ";";
-            const int rc = sqlite3_exec(conn->get(), sql.c_str(), nullptr, nullptr, nullptr);
-
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 更新失败: " << sqlite3_errmsg(conn->get()) << std::endl;
-            }
-
-            pool.returnConnection(conn);
-            return rc;
+            return executeSQL(sql);
         }
 
-        // 清理数据库中超过指定时间的数据
         [[nodiscard]] bool cleanDataBase(double hours) const {
-            // 设置清理数据状态为进行中
             clean_data_status = 2;
             auto start_time = std::chrono::high_resolution_clock::now();
 
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
-            // 获取当前时间戳（秒）
             const long long currentTime = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-
-            // 计算时间阈值（秒）
             const long long timeThreshold = currentTime - static_cast<long long>(hours * 3600);
 
-            // 查询将要删除的记录数
             const std::string countSql = "SELECT COUNT(*) FROM LOGDATA WHERE time < " + std::to_string(timeThreshold) + ";";
-            sqlite3_stmt* countStmt;
-            int rc = sqlite3_prepare_v2(db, countSql.c_str(), -1, &countStmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::ostringstream ss;
-                ss << "SQL 预处理失败: " << sqlite3_errmsg(db);
-                clean_data_message.push_back(ss.str());
+            if (mysql_real_query(db, countSql.c_str(), countSql.size()) != 0) {
+                clean_data_message.push_back("SQL 预处理失败: " + std::string(mysql_error(db)));
                 clean_data_status = -1;
+                pool.returnConnection(conn);
                 return false;
             }
 
+            MYSQL_RES* countRes = mysql_store_result(db);
             int deletedCount = 0;
-            if (sqlite3_step(countStmt) == SQLITE_ROW) {
-                deletedCount = sqlite3_column_int(countStmt, 0);
+            if (countRes) {
+                if (MYSQL_ROW row = mysql_fetch_row(countRes)) {
+                    deletedCount = row[0] ? std::stoi(row[0]) : 0;
+                }
+                mysql_free_result(countRes);
             }
-            sqlite3_finalize(countStmt);
 
-            // 开始事务以提高性能
-            rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::ostringstream ss;
-                ss << "Can not begin transaction: " << sqlite3_errmsg(db);
-                clean_data_message.push_back(ss.str());
+            if (mysql_real_query(db, "START TRANSACTION;", 18) != 0) {
+                clean_data_message.push_back("Can not begin transaction: " + std::string(mysql_error(db)));
                 clean_data_status = -1;
+                pool.returnConnection(conn);
                 return false;
             }
 
-            // 删除超过指定时间的数据
             const std::string deleteSql = "DELETE FROM LOGDATA WHERE time < " + std::to_string(timeThreshold) + ";";
-            rc = sqlite3_exec(db, deleteSql.c_str(), nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::ostringstream ss;
-                ss << "SQL delete failed: " << sqlite3_errmsg(db);
-                clean_data_message.push_back(ss.str());
-                sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            if (mysql_real_query(db, deleteSql.c_str(), deleteSql.size()) != 0) {
+                clean_data_message.push_back("SQL delete failed: " + std::string(mysql_error(db)));
+                mysql_real_query(db, "ROLLBACK;", 9);
                 clean_data_status = -1;
+                pool.returnConnection(conn);
                 return false;
             }
 
-            // 提交事务
-            rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::ostringstream ss;
-                ss << "Can not commit: " << sqlite3_errmsg(db);
-                clean_data_message.push_back(ss.str());
-                sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            if (mysql_real_query(db, "COMMIT;", 7) != 0) {
+                clean_data_message.push_back("Can not commit: " + std::string(mysql_error(db)));
+                mysql_real_query(db, "ROLLBACK;", 9);
                 clean_data_status = -1;
+                pool.returnConnection(conn);
                 return false;
             }
 
-            // 整理数据库以释放空间
-            rc = sqlite3_exec(db, "VACUUM;", nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::ostringstream ss;
-                ss << "Database vacuum failed: " << sqlite3_errmsg(db);
-                clean_data_message.push_back(ss.str());
-                clean_data_status = -1;
-                return false;
-            }
+            const std::string optimizeSql = "OPTIMIZE TABLE LOGDATA;";
+            mysql_real_query(db, optimizeSql.c_str(), optimizeSql.size());
 
-            // 计算耗时
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             double seconds = std::chrono::duration_cast<std::chrono::duration<double>>(duration).count();
 
-            // 添加耗时和清理日志数信息
             clean_data_message.emplace_back("Time elapsed: ");
             clean_data_message.emplace_back(std::to_string(seconds));
             clean_data_message.emplace_back("Number of cleaned logs: ");
@@ -308,167 +340,110 @@ namespace yuhangle {
             return true;
         }
 
-        // 查找指定表中是否存在指定值
         [[nodiscard]] bool isValueExists(const std::string &tableName, const std::string &columnName, const std::string &value) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
-            const std::string sql = "SELECT COUNT(*) FROM " + tableName + " WHERE " + columnName + " = ?;";
+            const std::string escapedValue = escapeString(db, value);
+            const std::string sql = "SELECT COUNT(*) FROM " + tableName + " WHERE " + columnName + " = '" + escapedValue + "';";
 
-            sqlite3_stmt* stmt;
-            if (const int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr); rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
+            if (mysql_real_query(db, sql.c_str(), sql.size()) != 0) {
+                std::cerr << "SQL 预处理失败: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
                 return false;
             }
 
-            // 绑定参数
-            sqlite3_bind_text(stmt, 1, value.c_str(), -1, SQLITE_STATIC);
-
-            // 执行查询并获取结果
+            MYSQL_RES* res = mysql_store_result(db);
             bool exists = false;
-            if (sqlite3_step(stmt) == SQLITE_ROW) {
-                const int count = sqlite3_column_int(stmt, 0); // 获取 COUNT(*) 的结果
-                exists = (count > 0);
+            if (res) {
+                if (MYSQL_ROW row = mysql_fetch_row(res)) {
+                    const int count = row[0] ? std::stoi(row[0]) : 0;
+                    exists = (count > 0);
+                }
+                mysql_free_result(res);
             }
 
-            // 清理资源
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
             return exists;
         }
 
-        // 修改指定表中的指定数据的指定值
         [[nodiscard]] bool updateValue(const std::string &tableName,
                          const std::string &targetColumn,
                          const std::string &newValue,
                          const std::string &conditionColumn,
                          const std::string &conditionValue) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
             const std::string sql = "UPDATE " + tableName +
-                      " SET " + targetColumn + " = ?" +
-                      " WHERE " + conditionColumn + " = ?;";
+                      " SET " + targetColumn + " = '" + escapeString(db, newValue) +
+                      "' WHERE " + conditionColumn + " = '" + escapeString(db, conditionValue) + "';";
 
-            sqlite3_stmt* stmt;
-            int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
+            if (mysql_real_query(db, sql.c_str(), sql.size()) != 0) {
+                std::cerr << "SQL 更新失败: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
                 return false;
             }
 
-            // 绑定参数
-            sqlite3_bind_text(stmt, 1, newValue.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 2, conditionValue.c_str(), -1, SQLITE_STATIC);
-
-            // 执行 SQL 语句
-            rc = sqlite3_step(stmt);
-            if (rc != SQLITE_DONE) {
-                std::cerr << "SQL 更新失败: " << sqlite3_errmsg(db) << std::endl;
-                sqlite3_finalize(stmt);
-                return false;
-            }
-
-            // 清理资源
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
             return true;
         }
 
-        // 根据UUID更新指定记录的状态
         [[nodiscard]] bool updateStatusByUUID(const std::string &uuid, const std::string &newStatus) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
-            const std::string sql = "UPDATE LOGDATA SET status = ? WHERE uuid = ?;";
+            const std::string sql = "UPDATE LOGDATA SET status = '" + escapeString(db, newStatus) +
+                                    "' WHERE uuid = '" + escapeString(db, uuid) + "';";
 
-            sqlite3_stmt* stmt;
-            int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
+            if (mysql_real_query(db, sql.c_str(), sql.size()) != 0) {
+                std::cerr << "SQL 更新失败: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
                 return false;
             }
 
-            // 绑定参数
-            sqlite3_bind_text(stmt, 1, newStatus.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 2, uuid.c_str(), -1, SQLITE_STATIC);
-
-            // 执行 SQL 语句
-            rc = sqlite3_step(stmt);
-            if (rc != SQLITE_DONE) {
-                std::cerr << "SQL 更新失败: " << sqlite3_errmsg(db) << std::endl;
-                sqlite3_finalize(stmt);
-                return false;
-            }
-
-            // 清理资源
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
             return true;
         }
 
-        // 批量更新状态
         [[nodiscard]] bool updateStatusesByUUIDs(const std::vector<std::pair<std::string, std::string>>& uuidStatusPairs) const {
             if (uuidStatusPairs.empty()) {
                 return true;
             }
 
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
-            // 开始事务以提高性能
-            int rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "无法开始事务: " << sqlite3_errmsg(db) << std::endl;
+            if (mysql_real_query(db, "START TRANSACTION;", 18) != 0) {
+                std::cerr << "无法开始事务: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
                 return false;
             }
 
-            const std::string sql = "UPDATE LOGDATA SET status = ? WHERE uuid = ?;";
-
-            sqlite3_stmt* stmt;
-            rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
-                return false;
-            }
-
-            // 遍历所有UUID和状态对并更新
             for (const auto& [uuid, status] : uuidStatusPairs) {
-                // 绑定参数
-                sqlite3_bind_text(stmt, 1, status.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 2, uuid.c_str(), -1, SQLITE_STATIC);
+                const std::string sql = "UPDATE LOGDATA SET status = '" + escapeString(db, status) +
+                                        "' WHERE uuid = '" + escapeString(db, uuid) + "';";
 
-                // 执行 SQL 语句
-                rc = sqlite3_step(stmt);
-                if (rc != SQLITE_DONE) {
-                    std::cerr << "SQL 更新失败: " << sqlite3_errmsg(db) << std::endl;
-                    sqlite3_finalize(stmt);
-                    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+                if (mysql_real_query(db, sql.c_str(), sql.size()) != 0) {
+                    std::cerr << "SQL 更新失败: " << mysql_error(db) << std::endl;
+                    mysql_real_query(db, "ROLLBACK;", 9);
+                    pool.returnConnection(conn);
                     return false;
                 }
-
-                // 重置语句以供下次使用
-                sqlite3_reset(stmt);
             }
 
-            // 提交事务
-            rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "无法提交事务: " << sqlite3_errmsg(db) << std::endl;
-                sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            if (mysql_real_query(db, "COMMIT;", 7) != 0) {
+                std::cerr << "无法提交事务: " << mysql_error(db) << std::endl;
+                mysql_real_query(db, "ROLLBACK;", 9);
             }
 
-            // 清理资源
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
             return true;
         }
-
-        ///////////////////// LOGDATA 表操作 /////////////////////
 
         [[nodiscard]] int addLog(const std::string& uuid,
                                  const std::string& id,
@@ -481,299 +456,158 @@ namespace yuhangle {
                                  const std::string& type,
                                  const std::string& data,
                                  const std::string& status) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
             const std::string sql = "INSERT INTO LOGDATA (uuid, id, name, pos_x, pos_y, pos_z, "
-                              "world, obj_id, obj_name, time, type, data, status) VALUES (?, ?, "
-                              "?, ?, ?, ?, "
-                              "?, ?, ?, ?, ?, ?, ?);";
+                              "world, obj_id, obj_name, time, type, data, status) VALUES ('" +
+                              escapeString(db, uuid) + "', '" + escapeString(db, id) + "', '" + escapeString(db, name) +
+                              "', " + std::to_string(pos_x) + ", " + std::to_string(pos_y) + ", " + std::to_string(pos_z) +
+                              ", '" + escapeString(db, world) + "', '" + escapeString(db, obj_id) + "', '" + escapeString(db, obj_name) +
+                              "', " + std::to_string(time) + ", '" + escapeString(db, type) + "', '" + escapeString(db, data) +
+                              "', '" + escapeString(db, status) + "');";
 
-            sqlite3_stmt* stmt;
-            int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
-                return rc;
+            if (mysql_real_query(db, sql.c_str(), sql.size()) != 0) {
+                std::cerr << "SQL 插入失败: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
+                return mysql_errno(db);
             }
 
-            // 绑定参数
-            sqlite3_bind_text(stmt, 1, uuid.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 3, name.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_double(stmt, 4, pos_x);
-            sqlite3_bind_double(stmt, 5, pos_y);
-            sqlite3_bind_double(stmt, 6, pos_z);
-            sqlite3_bind_text(stmt, 7, world.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 8, obj_id.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 9, obj_name.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_int64(stmt, 10, time);
-            sqlite3_bind_text(stmt, 11, type.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 12, data.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 13, status.c_str(), -1, SQLITE_STATIC);
-
-            // 执行 SQL 语句
-            rc = sqlite3_step(stmt);
-            if (rc != SQLITE_DONE) {
-                std::cerr << "SQL 插入失败: " << sqlite3_errmsg(db) << std::endl;
-                sqlite3_finalize(stmt);
-                return rc;
-            }
-
-            // 清理资源
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
-            return SQLITE_OK;
+            return 0;
         }
 
-        // 批量插入日志数据
         [[nodiscard]] int addLogs(const std::vector<std::tuple<std::string, std::string, std::string, double, double, double,
                                  std::string, std::string, std::string, long long, std::string, std::string, std::string>>& logs) const {
             if (logs.empty()) {
-                return SQLITE_OK; // 空数据直接返回成功
+                return 0;
             }
 
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
-            // 开始事务以提高性能
-            int rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "无法开始事务: " << sqlite3_errmsg(db) << std::endl;
-                return rc;
+            if (mysql_real_query(db, "START TRANSACTION;", 18) != 0) {
+                std::cerr << "无法开始事务: " << mysql_error(db) << std::endl;
+                pool.returnConnection(conn);
+                return mysql_errno(db);
             }
 
-            const std::string sql = "INSERT INTO LOGDATA (uuid, id, name, pos_x, pos_y, pos_z, "
-                              "world, obj_id, obj_name, time, type, data, status) VALUES (?, ?, "
-                              "?, ?, ?, ?, "
-                              "?, ?, ?, ?, ?, ?, ?);";
-
-            sqlite3_stmt* stmt;
-            rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
-                return rc;
-            }
-
-            // 遍历所有日志数据并插入
             for (const auto& log : logs) {
                 const auto& [uuid, id, name, pos_x, pos_y, pos_z, world, obj_id, obj_name, time, type, data, status] = log;
+                const std::string sql = "INSERT INTO LOGDATA (uuid, id, name, pos_x, pos_y, pos_z, "
+                                  "world, obj_id, obj_name, time, type, data, status) VALUES ('" +
+                                  escapeString(db, uuid) + "', '" + escapeString(db, id) + "', '" + escapeString(db, name) +
+                                  "', " + std::to_string(pos_x) + ", " + std::to_string(pos_y) + ", " + std::to_string(pos_z) +
+                                  ", '" + escapeString(db, world) + "', '" + escapeString(db, obj_id) + "', '" + escapeString(db, obj_name) +
+                                  "', " + std::to_string(time) + ", '" + escapeString(db, type) + "', '" + escapeString(db, data) +
+                                  "', '" + escapeString(db, status) + "');";
 
-                // 绑定参数
-                sqlite3_bind_text(stmt, 1, uuid.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 3, name.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_double(stmt, 4, pos_x);
-                sqlite3_bind_double(stmt, 5, pos_y);
-                sqlite3_bind_double(stmt, 6, pos_z);
-                sqlite3_bind_text(stmt, 7, world.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 8, obj_id.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 9, obj_name.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_int64(stmt, 10, time);
-                sqlite3_bind_text(stmt, 11, type.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 12, data.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 13, status.c_str(), -1, SQLITE_STATIC);
-
-                // 执行 SQL 语句
-                rc = sqlite3_step(stmt);
-                if (rc != SQLITE_DONE) {
-                    std::cerr << "SQL 插入失败: " << sqlite3_errmsg(db) << std::endl;
-                    sqlite3_finalize(stmt);
-                    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
-                    return rc;
+                if (mysql_real_query(db, sql.c_str(), sql.size()) != 0) {
+                    std::cerr << "SQL 插入失败: " << mysql_error(db) << std::endl;
+                    mysql_real_query(db, "ROLLBACK;", 9);
+                    pool.returnConnection(conn);
+                    return mysql_errno(db);
                 }
-
-                // 重置语句以供下次使用
-                sqlite3_reset(stmt);
             }
 
-            // 提交事务
-            rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "无法提交事务: " << sqlite3_errmsg(db) << std::endl;
-                sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            if (mysql_real_query(db, "COMMIT;", 7) != 0) {
+                std::cerr << "无法提交事务: " << mysql_error(db) << std::endl;
+                mysql_real_query(db, "ROLLBACK;", 9);
             }
 
-            // 清理资源
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
-            return rc;
+            return 0;
         }
 
         int getAllLog(std::vector<std::map<std::string, std::string>> &result) const {
-            // 获取所有数据
             const std::string sql = "SELECT * FROM LOGDATA;";
-
-            // 调用 querySQL 函数执行查询，并将结果存储到 result 中
             return querySQL(sql, result);
         }
 
         int searchLog(std::vector<std::map<std::string, std::string>> &result,
                       const std::pair<std::string, double>& searchCriteria) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
-            // 获取当前时间戳（秒）
             const long long currentTime = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-
-            // 计算时间范围（秒），支持小数小时（如0.5表示半小时）
             const long long timeThreshold = currentTime - static_cast<long long>(searchCriteria.second * 3600);
 
-            // 使用参数化查询防止SQL注入
-            const std::string sql = "SELECT * FROM LOGDATA WHERE (name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? LIMIT 10000;";
+            const std::string searchPattern = "'%" + escapeString(db, searchCriteria.first) + "%'";
+            const std::string sql = "SELECT * FROM LOGDATA WHERE (name LIKE " + searchPattern +
+                                    " OR type LIKE " + searchPattern + " OR data LIKE " + searchPattern +
+                                    ") AND time >= " + std::to_string(timeThreshold) + " LIMIT 10000;";
 
-            sqlite3_stmt* stmt;
-            int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
-                return rc;
-            }
-
-            // 构造搜索关键词（添加通配符）
-            const std::string searchPattern = "%" + searchCriteria.first + "%";
-
-            // 绑定参数
-            sqlite3_bind_text(stmt, 1, searchPattern.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 2, searchPattern.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 3, searchPattern.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_int64(stmt, 4, timeThreshold);
-
-            // 执行查询并处理结果
-            while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-                std::map<std::string, std::string> row;
-                for (int i = 0; i < sqlite3_column_count(stmt); i++) {
-                    const char* colName = sqlite3_column_name(stmt, i);
-                    const auto colValue = reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
-                    row[colName] = colValue ? colValue : "NULL";
-                }
-                result.push_back(row);
-            }
-
-            if (rc != SQLITE_DONE) {
-                std::cerr << "SQL 查询失败: " << sqlite3_errmsg(db) << std::endl;
-            }
-
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
-            return rc == SQLITE_DONE ? SQLITE_OK : rc;
+            return querySQL(sql, result);
         }
 
-        // 新增带坐标和世界过滤的搜索函数
         int searchLog(std::vector<std::map<std::string, std::string>> &result,
                       const std::pair<std::string, double>& searchCriteria,
                       const double x, const double y, const double z, const double r, const std::string& world, bool if_max = false) const {
-            auto& pool = ConnectionPool::getInstance(db_filename);
+            auto& pool = ConnectionPool::getInstance(config);
             const auto conn = pool.getConnection();
-            sqlite3* db = conn->get();
+            MYSQL* db = conn->get();
 
-            // 获取当前时间戳（秒）
             const long long currentTime = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-
-            // 计算时间范围（秒），支持小数小时（如0.5表示半小时）
             const long long timeThreshold = currentTime - static_cast<long long>(searchCriteria.second * 3600);
 
-            // 使用参数化查询防止SQL注入
-            std::string sql;
-            if (if_max) {
-                sql = "SELECT * FROM LOGDATA WHERE "
-                      "(name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? "
-                      "AND world = ? "
-                      "AND ((pos_x - ?)*(pos_x - ?) + (pos_y - ?)*(pos_y - ?) + (pos_z - ?)*(pos_z - ?)) <= ?;";
-            } else {
-                sql = "SELECT * FROM LOGDATA WHERE "
-                           "(name LIKE ? OR type LIKE ? OR data LIKE ?) AND time >= ? "
-                           "AND world = ? "
-                           "AND ((pos_x - ?)*(pos_x - ?) + (pos_y - ?)*(pos_y - ?) + (pos_z - ?)*(pos_z - ?)) <= ? "
-                           "LIMIT 10000;";
+            const std::string searchPattern = "'%" + escapeString(db, searchCriteria.first) + "%'";
+            std::ostringstream sql;
+            sql << "SELECT * FROM LOGDATA WHERE (name LIKE " << searchPattern
+                << " OR type LIKE " << searchPattern
+                << " OR data LIKE " << searchPattern
+                << ") AND time >= " << timeThreshold
+                << " AND world = '" << escapeString(db, world) << "'"
+                << " AND ((pos_x - " << x << ")*(pos_x - " << x
+                << ") + (pos_y - " << y << ")*(pos_y - " << y
+                << ") + (pos_z - " << z << ")*(pos_z - " << z
+                << ")) <= " << (r * r);
+
+            if (!if_max) {
+                sql << " LIMIT 10000";
             }
+            sql << ";";
 
-            sqlite3_stmt* stmt;
-            int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                std::cerr << "SQL 预处理失败: " << sqlite3_errmsg(db) << std::endl;
-                return rc;
-            }
-
-            // 构造搜索关键词（添加通配符）
-            const std::string searchPattern = "%" + searchCriteria.first + "%";
-
-            // 绑定参数
-            sqlite3_bind_text(stmt, 1, searchPattern.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 2, searchPattern.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_text(stmt, 3, searchPattern.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_int64(stmt, 4, timeThreshold);
-            sqlite3_bind_text(stmt, 5, world.c_str(), -1, SQLITE_STATIC);
-            sqlite3_bind_double(stmt, 6, x);
-            sqlite3_bind_double(stmt, 7, x);
-            sqlite3_bind_double(stmt, 8, y);
-            sqlite3_bind_double(stmt, 9, y);
-            sqlite3_bind_double(stmt, 10, z);
-            sqlite3_bind_double(stmt, 11, z);
-            sqlite3_bind_double(stmt, 12, r*r);
-
-            // 执行查询并处理结果
-            while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-                std::map<std::string, std::string> row;
-                for (int i = 0; i < sqlite3_column_count(stmt); i++) {
-                    const char* colName = sqlite3_column_name(stmt, i);
-                    const auto colValue = reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
-                    row[colName] = colValue ? colValue : "NULL";
-                }
-                result.push_back(row);
-            }
-
-            if (rc != SQLITE_DONE) {
-                std::cerr << "SQL 查询失败: " << sqlite3_errmsg(db) << std::endl;
-            }
-
-            sqlite3_finalize(stmt);
             pool.returnConnection(conn);
-            return rc == SQLITE_DONE ? SQLITE_OK : rc;
+            return querySQL(sql.str(), result);
         }
 
         //数据库工具
 
-        //将逗号字符串分割为vector
         static std::vector<std::string> splitString(const std::string& input) {
-            std::vector<std::string> result; // 用于存储分割后的结果
-            std::string current;             // 当前正在构建的子字符串
-            bool inBraces = false;           // 标记是否在 {} 内部
-            bool inBrackets = false;         // 标记是否在 [] 内部
+            std::vector<std::string> result;
+            std::string current;
+            bool inBraces = false;
+            bool inBrackets = false;
 
             for (const char ch : input) {
                 if (ch == '{') {
-                    // 遇到左大括号，标记进入 {} 内部
                     inBraces = true;
-                    current += ch; // 将 { 添加到当前字符串
+                    current += ch;
                 } else if (ch == '}') {
-                    // 遇到右大括号，标记离开 {} 内部
                     inBraces = false;
-                    current += ch; // 将 } 添加到当前字符串
+                    current += ch;
                 } else if (ch == '[') {
-                    // 遇到左方括号，标记进入 [] 内部
                     inBrackets = true;
-                    current += ch; // 将 [ 添加到当前字符串
+                    current += ch;
                 } else if (ch == ']') {
-                    // 遇到右方括号，标记离开 [] 内部
                     inBrackets = false;
-                    current += ch; // 将 ] 添加到当前字符串
+                    current += ch;
                 } else if (ch == ',' && !inBraces && !inBrackets) {
-                    // 遇到逗号且不在 {} 和 [] 内部时，分割字符串
                     if (!current.empty()) {
                         result.push_back(current);
                         current.clear();
                     }
                 } else {
-                    // 其他情况，将字符添加到当前字符串
                     current += ch;
                 }
             }
 
-            // 处理最后一个子字符串（如果非空）
             if (!current.empty()) {
                 result.push_back(current);
             }
@@ -781,25 +615,22 @@ namespace yuhangle {
             return result;
         }
 
-        //将数字字符逗号分割为vector
         static std::vector<int> splitStringInt(const std::string& input) {
-            std::vector<int> result; // 用于存储分割后的结果
-            std::stringstream ss(input);     // 使用 string stream 处理输入字符串
+            std::vector<int> result;
+            std::stringstream ss(input);
             std::string item;
 
-            // 按逗号分割字符串
             while (std::getline(ss, item, ',')) {
-                if (!item.empty()) {         // 如果分割出的元素非空，则添加到结果中
+                if (!item.empty()) {
                     std::stringstream sss(item);
                     int groupid = 0;
                     if (!(sss >> groupid)) {
-                        return {}; // 如果解析失败，返回空
+                        return {};
                     }
                     result.push_back(groupid);
                 }
             }
 
-            // 如果没有逗号且结果为空则返回空
             if (result.empty()) {
                 return {};
             }
@@ -807,69 +638,62 @@ namespace yuhangle {
             return result;
         }
 
-        //将vector(string)通过逗号分隔改为字符串
         static std::string vectorToString(const std::vector<std::string>& vec) {
             if (vec.empty()) {
-                return ""; // 如果向量为空，返回空字符串
+                return "";
             }
 
-            std::ostringstream oss; // 使用字符串流拼接结果
+            std::ostringstream oss;
             for (size_t i = 0; i < vec.size(); ++i) {
-                oss << vec[i]; // 添加当前元素
-                if (i != vec.size() - 1 && !(vec[i].empty())) { // 如果不是最后一个元素且不为空，添加逗号
+                oss << vec[i];
+                if (i != vec.size() - 1 && !(vec[i].empty())) {
                     oss << ",";
                 }
             }
 
-            return oss.str(); // 返回拼接后的字符串
+            return oss.str();
         }
 
-        //将vector(int)通过逗号分隔改为字符串
         static std::string IntVectorToString(const std::vector<int>& vec) {
             if (vec.empty()) {
-                return ""; // 如果向量为空，返回空字符串
+                return "";
             }
 
-            std::ostringstream oss; // 使用字符串流拼接结果
+            std::ostringstream oss;
             for (size_t i = 0; i < vec.size(); ++i) {
-                oss << vec[i]; // 添加当前元素
-                if (i != vec.size() - 1) { // 如果不是最后一个元素，添加逗号
+                oss << vec[i];
+                if (i != vec.size() - 1) {
                     oss << ",";
                 }
             }
 
-            return oss.str(); // 返回拼接后的字符串
+            return oss.str();
         }
 
-        //字符串改整数
         static int stringToInt(const std::string& str) {
             try {
-                // 尝试将字符串转换为整数
                 return std::stoi(str);
             } catch (const std::invalid_argument&) {
-                // 捕获无效参数异常（例如无法解析为整数）
                 return 0;
             } catch (const std::out_of_range&) {
-                // 捕获超出范围异常（例如数值过大或过小）
                 return 0;
             }
         }
 
-        // 生成一个符合 RFC 4122 标准的 UUID v4
         static std::string generate_uuid_v4() {
             static thread_local std::mt19937 gen{std::random_device{}()};
 
             std::uniform_int_distribution<int> dis(0, 15);
 
             std::stringstream ss;
-            ss << std::hex; // 设置为十六进制输出
+            ss << std::hex;
 
             for (int i = 0; i < 8; ++i) ss << dis(gen);
             ss << "-";
             for (int i = 0; i < 4; ++i) ss << dis(gen);
             ss << "-";
 
-            ss << "4"; // 版本号为 4
+            ss << "4";
             for (int i = 0; i < 3; ++i) ss << dis(gen);
             ss << "-";
 
@@ -883,7 +707,7 @@ namespace yuhangle {
         }
 
     private:
-        std::string db_filename;
+        MysqlConfig config;
     };
 }
 #endif // TIANYAN_DATABASE_H

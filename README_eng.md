@@ -57,19 +57,15 @@ The Tianyan plugin provides a WebUI panel that can be accessed through a browser
 After the WebUI is started, a WebUI configuration file web_config.json will be generated in the plugin data directory:
 ```json
 {
-"secret": "your_secret",
 "backend_port": 8098
 }
 ```
-- `secret`: Access key for the WebUI, used for authentication
-
 - `backend_port`: WebUI port
 
-Running the WebUI requires the following pip packages: `fastapi`, `uvicorn`. These packages will be automatically installed when the WebUI runs.
+Running the WebUI requires the following pip packages: `fastapi`, `uvicorn`, `pydantic`, `pymysql`. These packages will be automatically installed when the WebUI runs.
 
 You can access the WebUI panel via `server_IP:WebUI_port`. For example, with the default port 8098, the access URL is `http://127.0.0.1:8098`.
-
-You can also specify the backend IP and port within the WebUI after connecting.
+The WebUI does not require a password—open the page to access the query view.
 
 ## 🚀 Installation, Configuration & Usage
 
@@ -94,12 +90,86 @@ Default configuration:
     "10s_message_max": 6,
     "enable_web_ui": false,
     "language": "zh_CN",
+    "mysql": {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "user": "tianyan",
+        "password": "tianyan",
+        "database": "tianyan"
+    },
     "no_log_mobs": [
         "minecraft:zombie_pigman",
+        "minecraft:zombified_piglin",
         "minecraft:zombie",
+        "minecraft:zombie_villager",
+        "minecraft:husk",
+        "minecraft:drowned",
         "minecraft:skeleton",
+        "minecraft:stray",
+        "minecraft:wither_skeleton",
         "minecraft:bogged",
-        "minecraft:slime"
+        "minecraft:creeper",
+        "minecraft:spider",
+        "minecraft:cave_spider",
+        "minecraft:enderman",
+        "minecraft:witch",
+        "minecraft:slime",
+        "minecraft:magma_cube",
+        "minecraft:ghast",
+        "minecraft:blaze",
+        "minecraft:phantom",
+        "minecraft:guardian",
+        "minecraft:elder_guardian",
+        "minecraft:shulker",
+        "minecraft:silverfish",
+        "minecraft:endermite",
+        "minecraft:piglin",
+        "minecraft:piglin_brute",
+        "minecraft:hoglin",
+        "minecraft:zoglin",
+        "minecraft:ravager",
+        "minecraft:vindicator",
+        "minecraft:evoker",
+        "minecraft:pillager",
+        "minecraft:vex",
+        "minecraft:warden",
+        "minecraft:cow",
+        "minecraft:pig",
+        "minecraft:sheep",
+        "minecraft:chicken",
+        "minecraft:mooshroom",
+        "minecraft:horse",
+        "minecraft:donkey",
+        "minecraft:mule",
+        "minecraft:llama",
+        "minecraft:cat",
+        "minecraft:ocelot",
+        "minecraft:wolf",
+        "minecraft:fox",
+        "minecraft:rabbit",
+        "minecraft:goat",
+        "minecraft:panda",
+        "minecraft:polar_bear",
+        "minecraft:turtle",
+        "minecraft:bee",
+        "minecraft:bat",
+        "minecraft:squid",
+        "minecraft:glow_squid",
+        "minecraft:dolphin",
+        "minecraft:cod",
+        "minecraft:salmon",
+        "minecraft:pufferfish",
+        "minecraft:tropicalfish",
+        "minecraft:villager",
+        "minecraft:wandering_trader",
+        "minecraft:axolotl",
+        "minecraft:frog",
+        "minecraft:tadpole",
+        "minecraft:strider",
+        "minecraft:sniffer",
+        "minecraft:camel",
+        "minecraft:armadillo",
+        "minecraft:iron_golem"
     ]
 }
 ```
@@ -109,6 +179,7 @@ Configuration item descriptions:
 - `10s_message_max`: Maximum number of messages players can send within 10 seconds
 - `enable_web_ui`: Enable WebUI
 - `language`: Plugin language
+- `mysql`: MySQL database configuration (host, port, username, password, database)
 - `no_log_mobs`: List of entities not to be logged
 
 > In entity-related events, entities in `no_log_mobs` will not be recorded unless named tags are used.
@@ -220,8 +291,8 @@ Without parameters, a quick menu will pop up where players can query. The maximu
 
 Configure the development environment according to Endstone documentation:
 
-- Linux needs to install sqlite3 development library
-- Windows needs to use vcpkg or other package managers to install sqlite3 static development library
+- Linux needs to install the libmysqlclient development library
+- Windows needs to use vcpkg or other package managers to install the libmariadb static development library
 
 Clone the project code:
 ```shell
