@@ -351,7 +351,7 @@ void TianyanPlugin::onEnable()
             no_log_mobs = json_msg["no_log_mobs"];
             if (json_msg.contains("mysql")) {
                 mysql_host = json_msg["mysql"].value("host", mysql_host);
-                mysql_port = json_msg["mysql"].value("port", mysql_port);
+                mysql_port_number = json_msg["mysql"].value("port", mysql_port_number);
                 mysql_user = json_msg["mysql"].value("user", mysql_user);
                 mysql_password = json_msg["mysql"].value("password", mysql_password);
                 mysql_database = json_msg["mysql"].value("database", mysql_database);
@@ -517,7 +517,7 @@ void TianyanPlugin::onEnable()
         };
         getLogger().error(Tran.getLocal("Config file error!Use default config")+","+e.what());
     }
-    mysql_config = {mysql_host, mysql_user, mysql_password, mysql_database, mysql_port};
+    mysql_config = {mysql_host, mysql_user, mysql_password, mysql_database, mysql_port_number};
     Database = yuhangle::Database(mysql_config);
     tyCore = TianyanCore(Database);
     (void)Database.init_database();
