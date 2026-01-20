@@ -13,7 +13,87 @@ void TianyanPlugin::datafile_check() const {
         {"enable_web_ui",false},
         {"10s_message_max", 6},
         {"10s_command_max", 12},
-        {"no_log_mobs", {"minecraft:zombie_pigman","minecraft:zombie","minecraft:skeleton","minecraft:bogged","minecraft:slime"}}
+        {"mysql", {
+            {"host", "127.0.0.1"},
+            {"port", 3306},
+            {"user", "tianyan"},
+            {"password", "tianyan"},
+            {"database", "tianyan"}
+        }},
+        {"no_log_mobs", {
+            "minecraft:zombie_pigman",
+            "minecraft:zombified_piglin",
+            "minecraft:zombie",
+            "minecraft:zombie_villager",
+            "minecraft:husk",
+            "minecraft:drowned",
+            "minecraft:skeleton",
+            "minecraft:stray",
+            "minecraft:wither_skeleton",
+            "minecraft:bogged",
+            "minecraft:creeper",
+            "minecraft:spider",
+            "minecraft:cave_spider",
+            "minecraft:enderman",
+            "minecraft:witch",
+            "minecraft:slime",
+            "minecraft:magma_cube",
+            "minecraft:ghast",
+            "minecraft:blaze",
+            "minecraft:phantom",
+            "minecraft:guardian",
+            "minecraft:elder_guardian",
+            "minecraft:shulker",
+            "minecraft:silverfish",
+            "minecraft:endermite",
+            "minecraft:piglin",
+            "minecraft:piglin_brute",
+            "minecraft:hoglin",
+            "minecraft:zoglin",
+            "minecraft:ravager",
+            "minecraft:vindicator",
+            "minecraft:evoker",
+            "minecraft:pillager",
+            "minecraft:vex",
+            "minecraft:warden",
+            "minecraft:cow",
+            "minecraft:pig",
+            "minecraft:sheep",
+            "minecraft:chicken",
+            "minecraft:mooshroom",
+            "minecraft:horse",
+            "minecraft:donkey",
+            "minecraft:mule",
+            "minecraft:llama",
+            "minecraft:cat",
+            "minecraft:ocelot",
+            "minecraft:wolf",
+            "minecraft:fox",
+            "minecraft:rabbit",
+            "minecraft:goat",
+            "minecraft:panda",
+            "minecraft:polar_bear",
+            "minecraft:turtle",
+            "minecraft:bee",
+            "minecraft:bat",
+            "minecraft:squid",
+            "minecraft:glow_squid",
+            "minecraft:dolphin",
+            "minecraft:cod",
+            "minecraft:salmon",
+            "minecraft:pufferfish",
+            "minecraft:tropicalfish",
+            "minecraft:villager",
+            "minecraft:wandering_trader",
+            "minecraft:axolotl",
+            "minecraft:frog",
+            "minecraft:tadpole",
+            "minecraft:strider",
+            "minecraft:sniffer",
+            "minecraft:camel",
+            "minecraft:armadillo",
+            "minecraft:iron_golem"
+        }}
     };
 
     if (!(std::filesystem::exists(dataPath))) {
@@ -255,38 +335,11 @@ void TianyanPlugin::onLoad()
     //加载语言
     const auto [fst, snd] = Tran.loadLanguage();
     getLogger().info(snd);
-#ifdef __linux__
-    namespace fs = std::filesystem;
-    try {
-        // 获取当前路径
-        const fs::path currentPath = fs::current_path();
-
-        // 子目录路径
-        const fs::path subdir = dbPath;
-
-        // 拼接路径
-        const fs::path fullPath = currentPath / subdir;
-
-        // 如果需要将最终路径转换为 string 类型
-        const std::string finalPathStr = fullPath.string();
-
-        // 使用完整路径重新初始化Database
-        Database = yuhangle::Database(finalPathStr);
-        tyCore = TianyanCore(Database);
-    }
-    catch (const fs::filesystem_error& e) {
-        std::cerr << "Filesystem error: " << e.what() << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "General error: " << e.what() << std::endl;
-    }
-#endif
 }
 
 void TianyanPlugin::onEnable()
 {
     getLogger().info("onEnable is called");
-    (void)Database.init_database();
     datafile_check();
     //进行一个配置文件的读取
     json json_msg = read_config();
@@ -296,6 +349,13 @@ void TianyanPlugin::onEnable()
             max_message_in_10s = json_msg["10s_message_max"];
             max_command_in_10s = json_msg["10s_command_max"];
             no_log_mobs = json_msg["no_log_mobs"];
+            if (json_msg.contains("mysql")) {
+                mysql_host = json_msg["mysql"].value("host", mysql_host);
+                mysql_port = json_msg["mysql"].value("port", mysql_port);
+                mysql_user = json_msg["mysql"].value("user", mysql_user);
+                mysql_password = json_msg["mysql"].value("password", mysql_password);
+                mysql_database = json_msg["mysql"].value("database", mysql_database);
+            }
             lang = json_msg["language"];
             language_file = language_path +lang+".json";
             enable_web_ui = json_msg["enable_web_ui"];
@@ -303,14 +363,164 @@ void TianyanPlugin::onEnable()
             getLogger().error(Tran.getLocal("Config file error!Use default config"));
             max_message_in_10s = 6;
             max_command_in_10s = 12;
-            no_log_mobs = {"minecraft:zombie_pigman","minecraft:zombie","minecraft:skeleton","minecraft:bogged","minecraft:slime"};
+            no_log_mobs = {
+                "minecraft:zombie_pigman",
+                "minecraft:zombified_piglin",
+                "minecraft:zombie",
+                "minecraft:zombie_villager",
+                "minecraft:husk",
+                "minecraft:drowned",
+                "minecraft:skeleton",
+                "minecraft:stray",
+                "minecraft:wither_skeleton",
+                "minecraft:bogged",
+                "minecraft:creeper",
+                "minecraft:spider",
+                "minecraft:cave_spider",
+                "minecraft:enderman",
+                "minecraft:witch",
+                "minecraft:slime",
+                "minecraft:magma_cube",
+                "minecraft:ghast",
+                "minecraft:blaze",
+                "minecraft:phantom",
+                "minecraft:guardian",
+                "minecraft:elder_guardian",
+                "minecraft:shulker",
+                "minecraft:silverfish",
+                "minecraft:endermite",
+                "minecraft:piglin",
+                "minecraft:piglin_brute",
+                "minecraft:hoglin",
+                "minecraft:zoglin",
+                "minecraft:ravager",
+                "minecraft:vindicator",
+                "minecraft:evoker",
+                "minecraft:pillager",
+                "minecraft:vex",
+                "minecraft:warden",
+                "minecraft:cow",
+                "minecraft:pig",
+                "minecraft:sheep",
+                "minecraft:chicken",
+                "minecraft:mooshroom",
+                "minecraft:horse",
+                "minecraft:donkey",
+                "minecraft:mule",
+                "minecraft:llama",
+                "minecraft:cat",
+                "minecraft:ocelot",
+                "minecraft:wolf",
+                "minecraft:fox",
+                "minecraft:rabbit",
+                "minecraft:goat",
+                "minecraft:panda",
+                "minecraft:polar_bear",
+                "minecraft:turtle",
+                "minecraft:bee",
+                "minecraft:bat",
+                "minecraft:squid",
+                "minecraft:glow_squid",
+                "minecraft:dolphin",
+                "minecraft:cod",
+                "minecraft:salmon",
+                "minecraft:pufferfish",
+                "minecraft:tropicalfish",
+                "minecraft:villager",
+                "minecraft:wandering_trader",
+                "minecraft:axolotl",
+                "minecraft:frog",
+                "minecraft:tadpole",
+                "minecraft:strider",
+                "minecraft:sniffer",
+                "minecraft:camel",
+                "minecraft:armadillo",
+                "minecraft:iron_golem"
+            };
         }
     } catch (const std::exception& e) {
         max_message_in_10s = 6;
         max_command_in_10s = 12;
-        no_log_mobs = {"minecraft:zombie_pigman","minecraft:zombie","minecraft:skeleton","minecraft:bogged","minecraft:slime"};
+        no_log_mobs = {
+            "minecraft:zombie_pigman",
+            "minecraft:zombified_piglin",
+            "minecraft:zombie",
+            "minecraft:zombie_villager",
+            "minecraft:husk",
+            "minecraft:drowned",
+            "minecraft:skeleton",
+            "minecraft:stray",
+            "minecraft:wither_skeleton",
+            "minecraft:bogged",
+            "minecraft:creeper",
+            "minecraft:spider",
+            "minecraft:cave_spider",
+            "minecraft:enderman",
+            "minecraft:witch",
+            "minecraft:slime",
+            "minecraft:magma_cube",
+            "minecraft:ghast",
+            "minecraft:blaze",
+            "minecraft:phantom",
+            "minecraft:guardian",
+            "minecraft:elder_guardian",
+            "minecraft:shulker",
+            "minecraft:silverfish",
+            "minecraft:endermite",
+            "minecraft:piglin",
+            "minecraft:piglin_brute",
+            "minecraft:hoglin",
+            "minecraft:zoglin",
+            "minecraft:ravager",
+            "minecraft:vindicator",
+            "minecraft:evoker",
+            "minecraft:pillager",
+            "minecraft:vex",
+            "minecraft:warden",
+            "minecraft:cow",
+            "minecraft:pig",
+            "minecraft:sheep",
+            "minecraft:chicken",
+            "minecraft:mooshroom",
+            "minecraft:horse",
+            "minecraft:donkey",
+            "minecraft:mule",
+            "minecraft:llama",
+            "minecraft:cat",
+            "minecraft:ocelot",
+            "minecraft:wolf",
+            "minecraft:fox",
+            "minecraft:rabbit",
+            "minecraft:goat",
+            "minecraft:panda",
+            "minecraft:polar_bear",
+            "minecraft:turtle",
+            "minecraft:bee",
+            "minecraft:bat",
+            "minecraft:squid",
+            "minecraft:glow_squid",
+            "minecraft:dolphin",
+            "minecraft:cod",
+            "minecraft:salmon",
+            "minecraft:pufferfish",
+            "minecraft:tropicalfish",
+            "minecraft:villager",
+            "minecraft:wandering_trader",
+            "minecraft:axolotl",
+            "minecraft:frog",
+            "minecraft:tadpole",
+            "minecraft:strider",
+            "minecraft:sniffer",
+            "minecraft:camel",
+            "minecraft:armadillo",
+            "minecraft:iron_golem"
+        };
         getLogger().error(Tran.getLocal("Config file error!Use default config")+","+e.what());
     }
+    mysql_config = {mysql_host, mysql_user, mysql_password, mysql_database, mysql_port};
+    Database = yuhangle::Database(mysql_config);
+    tyCore = TianyanCore(Database);
+    (void)Database.init_database();
     Tran = translate(language_file);
     Tran.loadLanguage();
     translate::checkLanguageCommon(language_file,dataPath+"/language/lang.json");
